@@ -50,12 +50,21 @@ class CarLyricsScreen(
     /** What the host is currently showing, so a redraw can be skipped when nothing has changed. */
     private var shown: Content? = null
 
+    /**
+     * When the glance first became "looking for lyrics", or null when it is
+     * not looking. A fresh process has to walk the whole folder before the
+     * first lookup resolves, and the car must not spin on that forever.
+     */
+    private var lookingSinceMs: Long? = null
+
     private data class Content(
         val glance: CarGlance,
         val title: String,
         val artist: String,
         val transport: Transport,
         val playing: Boolean,
+        /** The glance has been "looking" longer than [LOOKING_TIMEOUT_MS]. */
+        val lookingTimedOut: Boolean,
         /**
          * Whether the app is drawing itself on the car's surface.
          *
@@ -101,18 +110,29 @@ class CarLyricsScreen(
         val snapshot = container.media.snapshot.value
         val playback = snapshot.playback
 
+        val glance = CarGlance.of(
+            state = container.lyrics.state.value,
+            hasTrack = snapshot.hasTrack,
+            permissionGranted = container.media.permissionGranted.value,
+            positionMs = playback.currentMs(),
+        )
+        lookingSinceMs = if (glance is CarGlance.Looking) {
+            lookingSinceMs ?: System.currentTimeMillis()
+        } else {
+            null
+        }
+        val lookingTimedOut = lookingSinceMs?.let {
+            System.currentTimeMillis() - it > LOOKING_TIMEOUT_MS
+        } ?: false
+
         return Content(
-            glance = CarGlance.of(
-                state = container.lyrics.state.value,
-                hasTrack = snapshot.hasTrack,
-                permissionGranted = container.media.permissionGranted.value,
-                positionMs = playback.currentMs(),
-            ),
+            glance = glance,
             title = snapshot.track?.title?.takeIf { it.isNotBlank() }
                 ?: carContext.getString(R.string.app_name),
             artist = snapshot.track?.artist?.takeIf { it.isNotBlank() }.orEmpty(),
             transport = snapshot.transport,
             playing = playback.isPlaying,
+            lookingTimedOut = lookingTimedOut,
             onSurface = surface.live.value &&
                 // MapWithContentTemplate is @RequiresCarApi(7) while this app
                 // admits hosts from level 1, and a surface arrives from
@@ -173,10 +193,17 @@ class CarLyricsScreen(
 
     private fun Content.fallback(): Template = when (glance) {
         is CarGlance.Now -> lyrics(glance)
-        CarGlance.Looking -> PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
-            .setTitle(title)
-            .setHeaderAction(Action.BACK)
-            .build()
+        CarGlance.Looking -> if (lookingTimedOut) {
+            // The index walk is still running (or stuck): words, not an
+            // endless spinner, after 30 seconds. If the lyrics do arrive,
+            // the tick loop swaps this for the real screen.
+            message(R.string.car_none, R.string.car_none_body)
+        } else {
+            PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
+                .setTitle(title)
+                .setHeaderAction(Action.BACK)
+                .build()
+        }
 
         CarGlance.Silent -> message(R.string.car_silent, R.string.car_silent_body)
         CarGlance.None -> message(R.string.car_none, R.string.car_none_body)
@@ -295,6 +322,13 @@ class CarLyricsScreen(
          * second, and the fix is to let the second one wait for the next tick.
          */
         const val MIN_REDRAW_GAP_MS = 1_000L
+
+        /**
+         * How long the car shows the loading spinner while lyrics are still
+         * being looked up. Past this, the driver gets the "no lyrics"
+         * message instead of a spinner that never ends.
+         */
+        const val LOOKING_TIMEOUT_MS = 30_000L
     }
 }
 

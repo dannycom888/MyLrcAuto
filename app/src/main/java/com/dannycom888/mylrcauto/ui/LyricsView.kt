@@ -74,9 +74,13 @@ fun LyricsView(
     // resumes); a scroll on every recomposition would fight the user.
     // Scroll so the current line lands on the third visible row, with two
     // lines of context above it (clamped to the top at the start of a song).
+    // The target is clamped to the document and the scroll is guarded: a
+    // scroll must never crash the composition on the car surface.
     LaunchedEffect(currentIndex, followCurrent) {
         if (followCurrent && currentIndex >= 0) {
-            listState.animateScrollToItem((currentIndex - 2).coerceAtLeast(0))
+            val target = (currentIndex - 2).coerceAtLeast(0)
+                .coerceAtMost((document.lines.size - 1).coerceAtLeast(0))
+            runCatching { listState.animateScrollToItem(target) }
         }
     }
 

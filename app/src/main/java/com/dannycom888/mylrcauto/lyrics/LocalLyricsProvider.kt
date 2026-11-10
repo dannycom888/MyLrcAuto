@@ -1,15 +1,20 @@
 package com.dannycom888.mylrcauto.lyrics
 
 import android.content.Context
+import android.util.Log
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsMatcher.IndexedAudioFile
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsMatcher.IndexedLrcFile
 import com.dannycom888.mylrcauto.media.TrackInfo
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Lyrics provider backed by the user's own `.lrc` files in a folder they pick
@@ -37,6 +42,18 @@ class LocalLyricsProvider(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     /** True once the user has picked a folder; drives [isConfigured]. */
     private val hasFolder: () -> Boolean = { true },
+    /**
+     * The configured folder's URI string, or null when no folder is picked.
+     * Drives the disk index cache: a cached index is only served for the
+     * folder it was built from.
+     */
+    private val folderUri: () -> String? = { null },
+    /**
+     * App-lifetime scope for the background index rebuild after a disk
+     * cache is served. Null disables the rebuild (the cache is still
+     * served, and the next lookup walks the folder instead).
+     */
+    private val backgroundScope: CoroutineScope? = null,
 ) {
 
     val isConfigured: Boolean get() = hasFolder()
@@ -44,6 +61,9 @@ class LocalLyricsProvider(
     var noMatchReason: String? = null
 
     private val indexMutex = Mutex()
+
+    /** True while a background rebuild (after serving a disk cache) is running. */
+    private val rebuildInFlight = AtomicBoolean(false)
 
     @Volatile
     private var source: LocalLyricsSource? = null
@@ -172,48 +192,165 @@ class LocalLyricsProvider(
 
     private suspend fun ensureIndex(): LocalIndex? {
         cachedIndex?.let { return it }
-        val folderSource = source ?: return null
+        val uri = folderUri()
+        // Fresh process, disk cache for this folder: serve it at once so the
+        // first lookup resolves immediately, and rebuild it in the
+        // background so the cache stays fresh. Stale entries beat an
+        // infinite spinner on the car.
+        if (uri != null) {
+            val diskIndex = withContext(ioDispatcher) { loadCachedIndex(uri) }
+            if (diskIndex != null) {
+                cachedIndex = diskIndex
+                triggerBackgroundRebuild()
+                return diskIndex
+            }
+        }
         return indexMutex.withLock {
             cachedIndex?.let { return it }
             // One walk, not two: the folder is traversed once for `.lrc` and
             // audio files together.
             //
-            // NonCancellable, because a lookup that times out must not discard
-            // the build: a big folder outruns a first lookup, but the index is
-            // the whole point of the *next* lookup too, so the walk runs to
-            // completion even when this fetch is cancelled.
-            //
             // A revoked SAF grant (SecurityException) or a vanished folder
             // must not crash the lookup or the rescan either: the index stays
             // empty, the failure is remembered for the UI to report, and the
             // next lookup retries the walk rather than serving a stale answer.
-            val (lrcFiles, audioFiles) = try {
-                withContext(NonCancellable + ioDispatcher) {
-                    folderSource.listAll()
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            val index = walkFolder()
+            if (index == null) {
                 lastIndexError = true
                 return@withLock null
             }
             lastIndexError = false
-            val index = LocalIndex(
-                lrc = lrcFiles.map { file ->
+            cachedIndex = index
+            if (uri != null) {
+                saveCachedIndex(uri, index)
+            }
+            index
+        }
+    }
+
+    /**
+     * One SAF walk of the folder, with timing and failure logging. Returns
+     * the built index, or null when the folder cannot be read. Never throws
+     * except on cancellation.
+     *
+     * NonCancellable, because a lookup that times out must not discard the
+     * build: a big folder outruns a first lookup, but the index is the whole
+     * point of the *next* lookup too, so the walk runs to completion even
+     * when this fetch is cancelled.
+     */
+    private suspend fun walkFolder(): LocalIndex? {
+        val folderSource = source ?: return null
+        val startedAt = System.currentTimeMillis()
+        val (lrcFiles, audioFiles) = try {
+            withContext(NonCancellable + ioDispatcher) {
+                folderSource.listAll()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Lyrics index walk failed", e)
+            return null
+        }
+        val tookMs = System.currentTimeMillis() - startedAt
+        if (tookMs > SLOW_WALK_MS) {
+            Log.i(
+                TAG,
+                "Lyrics index walk took ${tookMs}ms: ${lrcFiles.size} .lrc, " +
+                    "${audioFiles.size} audio",
+            )
+        }
+        return LocalIndex(
+            lrc = lrcFiles.map { file ->
+                IndexedLrcFile(
+                    file = file,
+                    keys = LocalLyricsMatcher.fileKeys(file.fileName),
+                )
+            },
+            audio = audioFiles.map { file ->
+                IndexedAudioFile(
+                    file = file,
+                    normalizedStem = LocalLyricsMatcher.fileStem(file.fileName),
+                )
+            },
+        )
+    }
+
+    private fun cacheFile(): File = File(context.filesDir, CACHE_FILE_NAME)
+
+    /**
+     * Loads the disk-cached index for this folder, or null when there is no
+     * cache, it is malformed, or it was built for a different folder.
+     * Called on the IO dispatcher; never throws.
+     */
+    private fun loadCachedIndex(uri: String): LocalIndex? {
+        return try {
+            val file = cacheFile()
+            if (!file.exists()) return null
+            val cached = LyricsIndexCache.parse(file.readText()) ?: return null
+            if (cached.folderUri != uri) return null
+            LocalIndex(
+                lrc = cached.lrc.map { fileEntry ->
                     IndexedLrcFile(
-                        file = file,
-                        keys = LocalLyricsMatcher.fileKeys(file.fileName),
+                        file = fileEntry,
+                        keys = LocalLyricsMatcher.fileKeys(fileEntry.fileName),
                     )
                 },
-                audio = audioFiles.map { file ->
+                audio = cached.audio.map { fileEntry ->
                     IndexedAudioFile(
-                        file = file,
-                        normalizedStem = LocalLyricsMatcher.fileStem(file.fileName),
+                        file = fileEntry,
+                        normalizedStem = LocalLyricsMatcher.fileStem(fileEntry.fileName),
                     )
                 },
             )
-            cachedIndex = index
-            index
+        } catch (e: Exception) {
+            Log.w(TAG, "Ignoring unreadable lyrics index cache", e)
+            null
+        }
+    }
+
+    /** Best-effort save of the index to disk; a failed save never breaks a lookup. */
+    private suspend fun saveCachedIndex(uri: String, index: LocalIndex) {
+        try {
+            val json = LyricsIndexCache.serialize(
+                folderUri = uri,
+                lrc = index.lrc.map { it.file },
+                audio = index.audio.map { it.file },
+            )
+            withContext(ioDispatcher) {
+                cacheFile().writeText(json)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not save lyrics index cache", e)
+        }
+    }
+
+    /**
+     * Rebuilds the index in the background after a disk-cached one was
+     * served, so the cache stays fresh without making the first lookup wait
+     * for a walk. Only one rebuild runs at a time, and a rebuild is
+     * discarded if the folder changed while it was walking, so it can never
+     * clobber a newer folder's index. A failed rebuild only logs: the
+     * disk-cached index keeps serving, and the failure is not remembered as
+     * an index error.
+     */
+    private fun triggerBackgroundRebuild() {
+        val scope = backgroundScope ?: return
+        val rebuildFolderUri = folderUri() ?: return
+        if (!rebuildInFlight.compareAndSet(false, true)) return
+        scope.launch(ioDispatcher) {
+            try {
+                val built = indexMutex.withLock { walkFolder() }
+                if (built != null && folderUri() == rebuildFolderUri) {
+                    cachedIndex = built
+                    saveCachedIndex(rebuildFolderUri, built)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Background lyrics index rebuild failed", e)
+            } finally {
+                rebuildInFlight.set(false)
+            }
         }
     }
 
@@ -223,6 +360,15 @@ class LocalLyricsProvider(
     }
 
     companion object {
+        /** Log tag for index walk diagnostics. */
+        const val TAG = "MyLrcAutoLyrics"
+
+        /** Disk cache of the file index, in the app's internal storage. */
+        const val CACHE_FILE_NAME = "lyrics-index-cache.json"
+
+        /** A walk slower than this is logged with its duration and file counts. */
+        const val SLOW_WALK_MS = 10_000L
+
         /** At most this many matching files are read and parsed per lookup. */
         private const val MAX_FILES_TO_PARSE = 8
     }

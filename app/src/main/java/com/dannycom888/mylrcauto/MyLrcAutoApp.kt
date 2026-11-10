@@ -64,15 +64,17 @@ class MyLrcAutoApp : Application() {
             LocalLyricsProvider(
                 context = context,
                 hasFolder = { settings.current.localLyricsFolderUri != null },
+                folderUri = { settings.current.localLyricsFolderUri },
+                backgroundScope = scope,
             ).also { it.attach(LocalFolderSource(context, settings)) }
 
         val lyrics: LyricsEngine = LyricsEngine(scope, localFolderLyrics)
 
         init {
-            // The file index lives only in memory, so a fresh process starts
-            // without one — and the first lookup would otherwise build it
-            // inside a timeout, which a big folder can outrun. Build it
-            // eagerly at startup, so the first track already finds its lyrics.
+            // The file index is cached on disk, so a fresh process can serve
+            // the first lookup from the cache at once — but the cache may be
+            // stale, so rebuild it eagerly at startup too, keeping it fresh
+            // for the next launch.
             scope.launch {
                 if (settings.current.localLyricsFolderUri != null) {
                     localFolderLyrics.refreshIndex()
