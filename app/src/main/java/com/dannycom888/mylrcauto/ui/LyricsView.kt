@@ -72,9 +72,11 @@ fun LyricsView(
 
     // Only scroll when the current line actually changes (or following
     // resumes); a scroll on every recomposition would fight the user.
+    // Scroll so the current line lands on the third visible row, with two
+    // lines of context above it (clamped to the top at the start of a song).
     LaunchedEffect(currentIndex, followCurrent) {
         if (followCurrent && currentIndex >= 0) {
-            listState.animateScrollToItem(currentIndex)
+            listState.animateScrollToItem((currentIndex - 2).coerceAtLeast(0))
         }
     }
 
