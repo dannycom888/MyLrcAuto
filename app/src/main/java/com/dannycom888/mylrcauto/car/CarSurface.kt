@@ -8,7 +8,10 @@ import android.util.Log
 import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
@@ -18,6 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
+import com.dannycom888.mylrcauto.ui.theme.MyLrcAutoTheme
 
 /**
  * The app's own UI, on the car's screen.
@@ -92,19 +96,29 @@ class CarSurface(
             setViewTreeLifecycleOwner(session)
             setViewTreeSavedStateRegistryOwner(session)
             setContent {
-                val area by state.visibleArea.collectAsStateWithLifecycle()
-                CarLyricsContent(
-                    container = container,
-                    positionMsProvider = positionMsProvider,
-                    onSeek = onSeek,
-                    // Inside the host's own idea of what is visible: it draws
-                    // a header and an action strip over this surface and says
-                    // where, so the words go in the gap rather than under the
-                    // furniture.
-                    modifier = androidx.compose.ui.Modifier.padding(
-                        insetsFor(area, width, height, dpi / 160f),
-                    ),
-                )
+                // The app's dark theme + a Surface: without them the content
+                // falls back to the default light scheme, so lyric lines
+                // render black-on-black on the dark car background.
+                MyLrcAutoTheme {
+                    Surface(
+                        modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        val area by state.visibleArea.collectAsStateWithLifecycle()
+                        CarLyricsContent(
+                            container = container,
+                            positionMsProvider = positionMsProvider,
+                            onSeek = onSeek,
+                            // Inside the host's own idea of what is visible: it draws
+                            // a header and an action strip over this surface and says
+                            // where, so the words go in the gap rather than under the
+                            // furniture.
+                            modifier = androidx.compose.ui.Modifier.padding(
+                                insetsFor(area, width, height, dpi / 160f),
+                            ),
+                        )
+                    }
+                }
             }
         }
 

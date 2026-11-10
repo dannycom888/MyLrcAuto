@@ -4,6 +4,10 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,23 +30,31 @@ class MainActivity : ComponentActivity() {
         val container = (application as MyLrcAutoApp).container
         setContent {
             MyLrcAutoTheme {
-                // Language change → recreate so the new locale applies.
-                // The first value seen after (re)creation is the language
-                // this activity was already created with, so it must not
-                // trigger another recreate — otherwise this loops forever.
-                // `appliedLanguage` resets to null on every recreation, so
-                // the fresh first emission is always absorbed, never acted on.
-                val settings by container.settings.settings.collectAsStateWithLifecycle()
-                var appliedLanguage by remember { mutableStateOf<AppLanguage?>(null) }
-                LaunchedEffect(settings.appLanguage) {
-                    if (appliedLanguage == null) {
-                        appliedLanguage = settings.appLanguage
-                    } else if (appliedLanguage != settings.appLanguage) {
-                        appliedLanguage = settings.appLanguage
-                        recreate()
+                // Surface provides LocalContentColor (onSurface) to everything
+                // below it: without it, Text and Icon default to black and
+                // are invisible on the dark window background.
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    // Language change → recreate so the new locale applies.
+                    // The first value seen after (re)creation is the language
+                    // this activity was already created with, so it must not
+                    // trigger another recreate — otherwise this loops forever.
+                    // `appliedLanguage` resets to null on every recreation, so
+                    // the fresh first emission is always absorbed, never acted on.
+                    val settings by container.settings.settings.collectAsStateWithLifecycle()
+                    var appliedLanguage by remember { mutableStateOf<AppLanguage?>(null) }
+                    LaunchedEffect(settings.appLanguage) {
+                        if (appliedLanguage == null) {
+                            appliedLanguage = settings.appLanguage
+                        } else if (appliedLanguage != settings.appLanguage) {
+                            appliedLanguage = settings.appLanguage
+                            recreate()
+                        }
                     }
+                    LyricsScreen(container)
                 }
-                LyricsScreen(container)
             }
         }
     }
