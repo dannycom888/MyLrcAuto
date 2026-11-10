@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">My LRC Auto</string>
+    <string name="notification_listener_label">My LRC Auto 通知监听</string>
+
+    <string name="player_nothing_playing">没有在放歌</string>
+    <string name="player_unknown_artist">未知歌手</string>
+    <string name="transport_previous">上一首</string>
+    <string name="transport_next">下一首</string>
+    <string name="lyrics_back_to_current">回到当前行</string>
+
+    <string name="status_no_permission_title">通知权限未开启</string>
+    <string name="status_no_permission_body">请开启通知权限，让 App 知道 Poweramp 在放什么歌。</string>
+    <string name="status_no_permission_button">去设置</string>
+    <string name="status_no_folder_title">还没选音乐文件夹</string>
+    <string name="status_no_folder_body">选一次 Music 文件夹，歌词就从歌曲旁边的 .lrc 文件里读。</string>
+    <string name="status_no_folder_button">选文件夹</string>
+    <string name="status_looking">正在找歌词…</string>
+    <string name="status_no_lyrics_title">这首歌没有歌词</string>
+    <string name="status_no_lyrics_body">文件夹里没有能对上这首歌的 .lrc 文件。</string>
+    <string name="status_folder_unreadable">歌词文件夹读不了，请在设置里重新选一次。</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_folder_title">歌词文件夹</string>
+    <string name="settings_folder_none">还没选</string>
+    <string name="settings_folder_pick">选文件夹</string>
+    <string name="settings_rescan">重新扫描</string>
+    <string name="settings_rescan_scanning">正在扫描…</string>
+    <string name="settings_rescan_done">找到 %1$d 个 .lrc 文件</string>
+    <string name="settings_rescan_unreadable">文件夹读不了，请重新选一次</string>
+    <string name="settings_language_title">界面语言</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_chinese">中文（简体）</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_about">My LRC Auto 1.0——只读本地歌词，不联网。</string>
+
+    <string name="car_silent">没有在放歌</string>
+    <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>
+    <string name="car_none">这首歌没有歌词</string>
+    <string name="car_none_body">文件夹里没有能对上这首歌的 .lrc 文件。</string>
+    <string name="car_looking">正在找歌词…</string>
+    <string name="car_permission">通知权限未开启</string>
+    <string name="car_permission_body">请在手机上开启通知权限，让 App 知道在放什么歌。</string>
+    <string name="car_untimed">这份歌词没有时间标签</string>
+    <string name="car_untimed_body">这个 .lrc 文件没有时间标签，没法同步。</string>
+    <string name="car_failed">出了点问题</string>
+    <string name="car_next">下一句：%1$s</string>
+    <string name="car_instrumental">（纯音乐）</string>
+    <string name="car_play">播放</string>
+    <string name="car_pause">暂停</string>
+</resources>

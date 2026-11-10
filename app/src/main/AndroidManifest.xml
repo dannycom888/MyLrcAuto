@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Android Auto. MAP_TEMPLATES buys MapWithContentTemplate, which is the one
+      template outside the navigation category that lets an app draw the screen
+      itself rather than filling in rows; ACCESS_SURFACE is what actually hands
+      over the canvas. Both are declarations rather than prompts — the host
+      grants them by reading this file.
+    -->
+    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />
+    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
+
+    <!--
+      Android 11+ hides other installed apps from us. We do not need to launch
+      other apps to work — the media session is enough — but we do want to name
+      the player in the UI, so declare an interest in the things a music app
+      publishes. Deliberately not QUERY_ALL_PACKAGES.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.APP_MUSIC" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".MyLrcAutoApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MyLrcAuto">
+
+        <!--
+          Android Auto. The descriptor is what makes the host look at this app
+          at all; the API level is the oldest car host this build will talk to.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+        <meta-data
+            android:name="androidx.car.app.theme"
+            android:resource="@style/CarAppTheme" />
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density|smallestScreenSize"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.MyLrcAuto">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          The whole point of this service is the permission it declares: once the
+          user grants "notification access", the system lets us call
+          MediaSessionManager.getActiveSessions(), which is how we see what is
+          playing in Poweramp and where its playhead is.
+        -->
+        <service
+            android:name=".media.MediaNotificationListener"
+            android:exported="true"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!--
+          The car screen. Exported because the Android Auto host is a different
+          process and has to be able to bind it; `createHostValidator` is what
+          decides who may, which is the check that stands in for a permission
+          here.
+
+          The category is a compromise stated plainly: the Car App Library has
+          seven, none of them for lyrics. POI is the one that can reach
+          MapWithContentTemplate, which is what gives the app a surface of its
+          own to draw the lyrics on — so the category is chosen for the
+          template it unlocks rather than for describing the app. The
+          consequence is that this can never be a Play-listed Android Auto app
+          and needs Android Auto's own unknown-sources developer setting to
+          appear, which is the same audience an APK already has.
+        -->
+        <service
+            android:name=".car.CarAppService"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.POI" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>

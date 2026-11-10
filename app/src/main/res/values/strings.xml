@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">My LRC Auto</string>
+    <string name="notification_listener_label">My LRC Auto notification listener</string>
+
+    <string name="player_nothing_playing">Nothing playing</string>
+    <string name="player_unknown_artist">Unknown artist</string>
+    <string name="transport_previous">Previous</string>
+    <string name="transport_next">Next</string>
+    <string name="lyrics_back_to_current">Back to current line</string>
+
+    <string name="status_no_permission_title">Notification access is off</string>
+    <string name="status_no_permission_body">Turn on notification access so the app can see what Poweramp is playing.</string>
+    <string name="status_no_permission_button">Open settings</string>
+    <string name="status_no_folder_title">No music folder picked</string>
+    <string name="status_no_folder_body">Pick your Music folder once — lyrics are read from the .lrc files next to your songs.</string>
+    <string name="status_no_folder_button">Pick folder</string>
+    <string name="status_looking">Looking for the words…</string>
+    <string name="status_no_lyrics_title">No lyrics for this one</string>
+    <string name="status_no_lyrics_body">No .lrc file in the folder matches this track.</string>
+    <string name="status_folder_unreadable">Lyrics folder can\'t be read — pick it again in Settings.</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_folder_title">Lyrics folder</string>
+    <string name="settings_folder_none">Not picked yet</string>
+    <string name="settings_folder_pick">Pick folder</string>
+    <string name="settings_rescan">Rescan</string>
+    <string name="settings_rescan_scanning">Scanning…</string>
+    <string name="settings_rescan_done">%1$d .lrc files found</string>
+    <string name="settings_rescan_unreadable">Folder can\'t be read — pick it again</string>
+    <string name="settings_language_title">App language</string>
+    <string name="settings_language_system">Follow system</string>
+    <string name="settings_language_chinese">中文（简体）</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_about">My LRC Auto 1.0 — local lyrics only, no network.</string>
+
+    <string name="car_silent">Nothing playing</string>
+    <string name="car_silent_body">Start a song in Poweramp and the words will show here.</string>
+    <string name="car_none">No lyrics for this one</string>
+    <string name="car_none_body">No .lrc file in the folder matches this track.</string>
+    <string name="car_looking">Looking for the words…</string>
+    <string name="car_permission">Notification access is off</string>
+    <string name="car_permission_body">Grant notification access on your phone so the app can see what is playing.</string>
+    <string name="car_untimed">These lyrics have no timings</string>
+    <string name="car_untimed_body">This .lrc file has no time tags, so there is nothing to sync.</string>
+    <string name="car_failed">Something went wrong</string>
+    <string name="car_next">Next: %1$s</string>
+    <string name="car_instrumental">(instrumental)</string>
+    <string name="car_play">Play</string>
+    <string name="car_pause">Pause</string>
+</resources>
