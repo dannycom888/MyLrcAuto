@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineScope
@@ -82,7 +83,15 @@ class MediaSessionRepository(
         // The second half arrives (and goes away) on its own schedule, so
         // watch it rather than only checking at start/refresh time.
         scope.launch {
-            MediaNotificationListener.connected.collect { updatePermission() }
+            MediaNotificationListener.connected.collect { connected ->
+                updatePermission()
+                if (connected && isPermissionGranted() && !started) {
+                    // The listener bound late, after the retry loop already
+                    // gave up: start session watching now.
+                    bindAttempts = 0
+                    start()
+                }
+            }
         }
         updatePermission()
     }
@@ -129,6 +138,9 @@ class MediaSessionRepository(
             // on "nothing playing".
             Log.w(TAG, "Not allowed to read sessions yet: ${e.message}")
             started = false
+            // Force the bind: after first grant the system does not always
+            // bind the listener service on its own (Samsung quirk).
+            runCatching { NotificationListenerService.requestRebind(listenerComponent) }
             scheduleBindRetry()
         }
     }
@@ -157,6 +169,12 @@ class MediaSessionRepository(
             stop()
             _snapshot.value = PlayerSnapshot()
             return@onMain
+        }
+        if (!MediaNotificationListener.connected.value) {
+            // The toggle is on but the system has not bound our listener
+            // service yet (Samsung does not always bind it on its own after
+            // first grant): force the bind, then let start() retry against it.
+            runCatching { NotificationListenerService.requestRebind(listenerComponent) }
         }
         if (!started) {
             // Coming back from the settings screen: allow a fresh round of retries.

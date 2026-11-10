@@ -46,4 +46,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Coming back from the notification-access settings: pick up a
+        // permission granted while we were away, so the screen stops asking.
+        (application as MyLrcAutoApp).container.media.refresh()
+    }
 }
