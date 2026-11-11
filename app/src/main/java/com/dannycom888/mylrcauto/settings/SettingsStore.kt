@@ -11,6 +11,10 @@ data class Settings(
     /** String form of the picked music folder's tree URI, or null when not picked yet. */
     val localLyricsFolderUri: String? = null,
     val appLanguage: AppLanguage = AppLanguage.SYSTEM,
+    /** Base lyrics font size in sp (non-current lines; the current line is +5 sp). */
+    val lyricsFontSizeSp: Int = SettingsStore.DEFAULT_LYRICS_FONT_SIZE_SP,
+    /** Keep the phone screen on while the lyrics screen is showing. */
+    val keepScreenOn: Boolean = false,
 )
 
 /**
@@ -38,6 +42,10 @@ class SettingsStore(context: Context) {
         return Settings(
             localLyricsFolderUri = prefs.getString(KEY_FOLDER_URI, null),
             appLanguage = language,
+            lyricsFontSizeSp = coerceLyricsFontSizeSp(
+                prefs.getInt(KEY_LYRICS_FONT_SIZE_SP, DEFAULT_LYRICS_FONT_SIZE_SP),
+            ),
+            keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
         )
     }
 
@@ -51,9 +59,31 @@ class SettingsStore(context: Context) {
         _settings.value = current.copy(appLanguage = language)
     }
 
+    /** Out-of-range values (e.g. from an older build) are clamped, never stored raw. */
+    fun setLyricsFontSizeSp(sp: Int) {
+        val value = coerceLyricsFontSizeSp(sp)
+        prefs.edit().putInt(KEY_LYRICS_FONT_SIZE_SP, value).apply()
+        _settings.value = current.copy(lyricsFontSizeSp = value)
+    }
+
+    fun setKeepScreenOn(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply()
+        _settings.value = current.copy(keepScreenOn = enabled)
+    }
+
     companion object {
         const val PREFS_FILE = "mylrcauto-prefs"
         const val KEY_FOLDER_URI = "local_lyrics_folder_uri"
         const val KEY_APP_LANGUAGE = "app_language"
+        const val KEY_LYRICS_FONT_SIZE_SP = "lyrics_font_size_sp"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+
+        /** Lyrics size slider range: 14–32 sp, default 17 sp (the original hardcoded size). */
+        const val MIN_LYRICS_FONT_SIZE_SP = 14
+        const val MAX_LYRICS_FONT_SIZE_SP = 32
+        const val DEFAULT_LYRICS_FONT_SIZE_SP = 17
+
+        fun coerceLyricsFontSizeSp(sp: Int): Int =
+            sp.coerceIn(MIN_LYRICS_FONT_SIZE_SP, MAX_LYRICS_FONT_SIZE_SP)
     }
 }

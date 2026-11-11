@@ -1,5 +1,7 @@
 package com.dannycom888.mylrcauto.ui
 
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -100,6 +103,22 @@ fun LyricsScreen(container: AppContainer) {
     val lyricsState by container.lyrics.state.collectAsStateWithLifecycle()
     val settings by container.settings.settings.collectAsStateWithLifecycle()
     val track = snapshot.track
+
+    // Keep-screen-on: on while this lyrics screen is showing. This sits
+    // after the settings early-return above, so opening Settings leaves
+    // this branch, the effect disposes, and the flag is cleared; coming
+    // back re-applies it while the toggle is on. The flag is set on the
+    // activity window, so it holds even while the app is in the foreground
+    // with no touch input.
+    val activity = context as? Activity
+    DisposableEffect(settings.keepScreenOn) {
+        if (settings.keepScreenOn) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -213,6 +232,7 @@ fun LyricsScreen(container: AppContainer) {
                     positionMsProvider = { playheadMs },
                     onSeek = { positionMs -> container.media.seekTo(positionMs) },
                     modifier = Modifier.weight(1f),
+                    fontSizeSp = settings.lyricsFontSizeSp,
                 )
                 Text(
                     text = document.sourceName,

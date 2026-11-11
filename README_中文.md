@@ -1,6 +1,14 @@
-# My LRC Auto 1.0.6
+# My LRC Auto 1.0.7
 
 用户自己的原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
+
+本软件由 Muse 协助制作。
+
+## v1.0.7 变化
+
+- 设置里新增“歌词大小”：滑块调 14–32 sp，默认 17 sp（就是原来的大小），手机和车机上的歌词一起变，重启后保留。
+- 设置里新增“保持屏幕常亮”开关：打开后看歌词时屏幕不自动熄灭，离开歌词界面就恢复正常，重启后保留。
+- 换了新图标：深蓝底（#051E3C），白色 M 形音符和发光白车都对准中线、几乎贴在一起，车有两个圆眼睛和一张笑嘴。
 
 ## v1.0.6 变化
 
@@ -34,12 +42,13 @@
 - 手机界面：整首歌词列表，当前行高亮、自动跟随，可点一行快进
 - 车机界面：整首歌词显示在车机屏幕上（MapWithContentTemplate + 自己的绘制层），带上一曲/播放暂停/下一曲；全屏时左上小方框显示专辑封面（没有封面的歌显示 M 音符图标）
 - 中文界面，设置顶部可切换语言（跟随系统 / 中文（简体）/ English），立即生效
-- 图标：深蓝底车头 + 前面一个白色 M 形音符
+- 设置里可调歌词大小（14–32 sp）和保持屏幕常亮，两个设置都保存、重启保留
+- 图标：深蓝底（#051E3C），白色 M 形音符在上、发光白车在下，两者对准中线几乎贴在一起，车有圆眼睛和笑嘴
 
 ## 安装（APK 不在 Play 商店）
 
 1. 先在 Android Auto 开发者设置里开 Unknown sources，否则车机列表不显示。
-2. 用 KingInstaller 安装 APK（以 Play 安装器身份装，Android Auto 才能认出来）。
+2. 必须用 KingInstaller 安装 APK（以 Play 安装器身份装，Android Auto 才能认出来）。KingInstaller 从它的 GitHub Releases 页下载：https://github.com/fcaronte/KingInstaller/releases
 3. 打开 App，按提示开“通知访问权限”（用来看 Poweramp 在放什么）。
 4. 设置 → 选歌词文件夹 → 选 Music 文件夹 → 点 Rescan，应显示 1092 个 `.lrc`。
 5. 放一首歌（比如《一千年以后》），手机和车机上都应出整首歌词。
@@ -49,11 +58,11 @@
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 47 个测试，0 失败
+gradle_build :app:testDebugUnitTest   # 51 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.6（versionCode 8），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.7（versionCode 9），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 

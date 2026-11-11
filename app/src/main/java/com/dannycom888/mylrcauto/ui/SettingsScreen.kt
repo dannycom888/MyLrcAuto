@@ -18,6 +18,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,7 +42,9 @@ import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.settings.AppLanguage
+import com.dannycom888.mylrcauto.settings.SettingsStore
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val BackIcon by lazy {
     ImageVector.Builder(
@@ -70,11 +74,13 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
 )
 
 /**
- * Settings: language switch at the top, lyrics folder pick + rescan, about line.
+ * Settings: language switch at the top, lyrics size slider, keep-screen-on
+ * switch, lyrics folder pick + rescan, about line.
  *
  * Picking a language calls [com.dannycom888.mylrcauto.settings.SettingsStore.setAppLanguage];
  * the activity recreates itself (see MainActivity) so the whole screen switches
- * language at once. The choice persists in SharedPreferences.
+ * language at once. The choice persists in SharedPreferences. The size and
+ * keep-screen-on choices persist the same way, in the same store.
  */
 @Composable
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
@@ -157,6 +163,68 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Lyrics size — one slider for the phone and the car: the same
+        // LyricsView draws both, so the setting sizes both at once. 14–32 sp
+        // in 1 sp steps, saved on every move, so the list behind this screen
+        // is already the new size when the user goes back.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.settings_font_size_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = stringResource(
+                    R.string.settings_font_size_value,
+                    settings.lyricsFontSizeSp,
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        Slider(
+            value = settings.lyricsFontSizeSp.toFloat(),
+            onValueChange = { container.settings.setLyricsFontSizeSp(it.roundToInt()) },
+            valueRange = SettingsStore.MIN_LYRICS_FONT_SIZE_SP.toFloat()
+                ..SettingsStore.MAX_LYRICS_FONT_SIZE_SP.toFloat(),
+            steps = SettingsStore.MAX_LYRICS_FONT_SIZE_SP -
+                SettingsStore.MIN_LYRICS_FONT_SIZE_SP - 1,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Keep screen on — the phone screen holds the window flag while
+        // lyrics are showing; leaving the lyrics screen drops it.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { container.settings.setKeepScreenOn(!settings.keepScreenOn) }
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_keep_screen_on_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(R.string.settings_keep_screen_on_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = settings.keepScreenOn,
+                onCheckedChange = { container.settings.setKeepScreenOn(it) },
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

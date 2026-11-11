@@ -56,6 +56,7 @@ fun CarLyricsContent(
     val snapshot by container.media.snapshot.collectAsStateWithLifecycle()
     val lyricsState by container.lyrics.state.collectAsStateWithLifecycle()
     val permitted by container.media.permissionGranted.collectAsStateWithLifecycle()
+    val settings by container.settings.settings.collectAsStateWithLifecycle()
 
     // The same decision the templated screen makes, from the same function,
     // so the two car screens cannot disagree about whether there is anything
@@ -120,6 +121,8 @@ fun CarLyricsContent(
                 // switch itself off: there is no "back to current line"
                 // button the driver could tap to resume it.
                 followAlways = true,
+                // Same size setting as the phone: one slider sizes both.
+                fontSizeSp = settings.lyricsFontSizeSp,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

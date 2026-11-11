@@ -49,8 +49,24 @@ import kotlinx.coroutines.CancellationException
  * can never switch following off there, and there is no button to resume it
  * with, so following simply stays on.
  *
+ * [fontSizeSp] is the base size (non-current lines), from Settings; the
+ * current line is 5 sp larger, exactly as it was when the sizes were
+ * hardcoded (17 sp / 22 sp). Both the phone screen and the car surface pass
+ * the same value, so one setting sizes both.
+ *
  * An empty document renders nothing; the caller owns the empty state.
  */
+object LyricsTextSize {
+    /** Current line: 5 sp larger than the base size (17 → 22). */
+    fun currentSizeSp(baseSp: Int): Int = baseSp + 5
+
+    /** Current line height: base + 13 sp (17 → 30). */
+    fun currentLineHeightSp(baseSp: Int): Int = baseSp + 13
+
+    /** Other lines' height: base + 7 sp (17 → 24). */
+    fun lineHeightSp(baseSp: Int): Int = baseSp + 7
+}
+
 @Composable
 fun LyricsView(
     document: LyricsDocument,
@@ -58,6 +74,7 @@ fun LyricsView(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     followAlways: Boolean = false,
+    fontSizeSp: Int = 17,
 ) {
     val listState = rememberLazyListState()
     val currentIndex = document.indexAt(positionMsProvider())
@@ -116,8 +133,8 @@ fun LyricsView(
                         .fillMaxWidth()
                         .clickable { onSeek(line.timeMs) }
                         .padding(horizontal = 20.dp, vertical = 10.dp),
-                    fontSize = if (isCurrent) 22.sp else 17.sp,
-                    lineHeight = if (isCurrent) 30.sp else 24.sp,
+                    fontSize = if (isCurrent) LyricsTextSize.currentSizeSp(fontSizeSp).sp else fontSizeSp.sp,
+                    lineHeight = if (isCurrent) LyricsTextSize.currentLineHeightSp(fontSizeSp).sp else LyricsTextSize.lineHeightSp(fontSizeSp).sp,
                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                     color = if (isCurrent) {
                         MaterialTheme.colorScheme.secondary
