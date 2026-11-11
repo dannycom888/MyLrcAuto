@@ -4,10 +4,13 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -24,15 +27,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.InputStream
 
 /**
  * Watches every media session on the device and publishes whichever one is
  * actually playing music, together with a playhead we can extrapolate from.
  *
- * Simplified port of Melisma's repository: no artwork, no queue, no prefetch,
- * no ignored-players. Poweramp is preferred; among the rest, a session that
- * is playing beats one that played most recently, which beats one that merely
- * has metadata.
+ * Simplified port of Melisma's repository: no queue, no prefetch, no
+ * ignored-players. Poweramp is preferred; among the rest, a session that
+ * is playing beats one that played most recently, which beats one that
+ * merely has metadata. Artwork comes from the player's own metadata
+ * only — a bitmap in the metadata, or a `content://` / `file://`
+ * artwork URI opened through the resolver — and is never downloaded.
  *
  * **Everything inside runs on the main thread.** The watched controllers are
  * reached from framework callbacks delivered on the main looper (that is the
@@ -71,6 +77,15 @@ class MediaSessionRepository(
 
     /** Advances the published playhead while something is playing. */
     private var tickerJob: Job? = null
+
+    /** Covers fetched from artwork URIs, bounded so a long session cannot grow it. */
+    private val artworkCache = ArtworkCache<Bitmap>()
+
+    /** Artwork URIs already tried once, so a missing cover is not re-fetched every publish. */
+    private val artworkAttempted = HashSet<String>()
+
+    /** I/O for URI artwork runs here, not on the main thread. */
+    private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val activeSessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
@@ -273,6 +288,9 @@ class MediaSessionRepository(
         album = md?.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty().trim(),
         durationMs = (md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L).coerceAtLeast(0L),
         packageName = packageName,
+        artworkUri = md?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+            ?: md?.getString(MediaMetadata.METADATA_KEY_ART_URI)
+            ?: md?.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI),
     )
 
     private fun MediaController.toSnapshot(): PlayerSnapshot {
@@ -291,13 +309,73 @@ class MediaSessionRepository(
             durationMs = duration.coerceAtLeast(0L),
         )
 
+        // The cover, from the player's own metadata: a bitmap first, then a
+        // cached URI cover. Some players publish only a URI. Reading it
+        // needs I/O, so it cannot happen here on the main thread — the
+        // snapshot goes out without it and the bitmap arrives in a later
+        // one. A metadata bitmap is scaled down before it is kept: the
+        // template's image travels to the car host over Binder.
+        val art = md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?.let { Artwork.scaleDown(it) }
+            ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                ?.let { Artwork.scaleDown(it) }
+            ?: md?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+                ?.let { Artwork.scaleDown(it) }
+            ?: artworkCache.get(track.artworkUri).also { if (it == null) loadArtwork(track) }
+
         return PlayerSnapshot(
             track = track,
             playback = playback,
             sourcePackage = packageName,
             sourceLabel = appLabel(packageName),
             transport = state.transport(),
+            artwork = art,
         )
+    }
+
+    /**
+     * Fetch artwork that was published as a URI rather than a bitmap.
+     *
+     * One attempt per URI, cached, and the result is published by re-running
+     * [publish] so it reaches the UI through the same path as everything
+     * else. Only `content://` and `file://` are opened (see
+     * [Artwork.isLocalUri]): an `http(s)://` artwork URI would need a
+     * download, and this app has no network permission.
+     */
+    private fun loadArtwork(track: TrackInfo) {
+        val uri = track.artworkUri?.takeIf { Artwork.isLocalUri(it) } ?: return
+        if (!artworkAttempted.add(uri)) return
+
+        artworkScope.launch {
+            val bitmap = runCatching {
+                context.contentResolver.openInputStream(Uri.parse(uri))?.use { stream ->
+                    decodeArtwork(stream)
+                }
+            }.getOrNull() ?: return@launch
+
+            // Bounded: a long listening session must not accumulate covers.
+            artworkCache.put(uri, bitmap)
+            // Only publish while still watching: a load that finishes after
+            // stop() must not resurrect a snapshot nobody is showing.
+            if (started) publish()
+        }
+    }
+
+    /**
+     * Decode a cover stream, downsampling so the longest side fits
+     * [Artwork.MAX_DIMENSION_PX] (sampled decode first, exact scale after,
+     * so a 1000px cover lands near the cap instead of a quarter of it).
+     */
+    private fun decodeArtwork(stream: InputStream): Bitmap? {
+        val bytes = stream.readBytes()
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val sampled = BitmapFactory.Options().apply {
+            inSampleSize = Artwork.sampleSize(bounds.outWidth, bounds.outHeight)
+        }
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sampled)
+            ?: return null
+        return Artwork.scaleDown(decoded)
     }
 
     /**

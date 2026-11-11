@@ -1,5 +1,6 @@
 package com.dannycom888.mylrcauto.media
 
+import android.graphics.Bitmap
 import android.os.SystemClock
 
 /** What a player says about the track that is playing. */
@@ -9,6 +10,14 @@ data class TrackInfo(
     val album: String,
     val durationMs: Long,
     val packageName: String = "",
+    /**
+     * Where the player says the cover lives, if it publishes one at all —
+     * METADATA_KEY_ALBUM_ART_URI, METADATA_KEY_ART_URI or
+     * METADATA_KEY_DISPLAY_ICON_URI. Only `content://` and `file://` are
+     * ever opened (see [Artwork.isLocalUri]); an `http(s)://` address is
+     * left alone, because this app has no network permission.
+     */
+    val artworkUri: String? = null,
 ) {
     val isEmpty: Boolean get() = title.isBlank() && artist.isBlank()
 
@@ -71,6 +80,14 @@ data class PlayerSnapshot(
     val sourcePackage: String? = null,
     val sourceLabel: String? = null,
     val transport: Transport = Transport(),
+    /**
+     * The current track's cover, read from the player's own metadata (a
+     * bitmap, or a locally opened artwork URI) and scaled down to
+     * [Artwork.MAX_DIMENSION_PX]. Null while a URI cover is still loading
+     * or when the player publishes none — never a previous track's cover:
+     * every publish builds a fresh snapshot from the current metadata.
+     */
+    val artwork: Bitmap? = null,
 ) {
     val hasTrack: Boolean get() = track != null && !track.isEmpty
 
