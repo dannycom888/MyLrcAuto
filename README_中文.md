@@ -1,6 +1,10 @@
-# My LRC Auto 1.0.4
+# My LRC Auto 1.0.5
 
 用户自己的原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
+
+## v1.0.5 变化
+
+车机大歌词面板不再卡住不动：跟手机一样每 0.5 秒刷新一次，正在唱的那行会高亮并自动滚动；分屏小卡片现在显示三行——上一句、正在唱的、下一句，正在唱的在中间，点卡片进全屏还是整首歌词；车机上如果 30 秒还没找到歌词，全屏歌词那里也显示“这首歌没有歌词”，不再一直显示“正在查找”；歌词索引存盘改成先写临时文件再替换，车机重进时不会读到写了一半的缓存。
 
 ## v1.0.4 变化
 
@@ -45,7 +49,7 @@ gradle_build :app:testDebugUnitTest   # 27 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.4（versionCode 6），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.5（versionCode 7），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 
