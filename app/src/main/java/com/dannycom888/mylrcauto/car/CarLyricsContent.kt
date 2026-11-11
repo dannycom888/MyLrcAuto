@@ -9,7 +9,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,6 +27,7 @@ import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LyricsState
 import com.dannycom888.mylrcauto.ui.LyricsView
+import kotlinx.coroutines.delay
 
 /**
  * The lyrics screen, drawn on the car's own surface.
@@ -68,6 +73,39 @@ fun CarLyricsContent(
     val document = (lyricsState as? LyricsState.Loaded)?.document
         ?.takeIf { glance is CarGlance.Now }
 
+    // 500 ms ticker, same as the phone screen: drives recomposition, so
+    // LyricsView's positionMsProvider reads a fresh extrapolated playhead.
+    // The car surface otherwise only recomposes when a flow emits, which is
+    // why the big lyrics panel could freeze while the template card — which
+    // has its own tick loop — kept updating its line. The tick runs whether
+    // or not a document is shown: it is also what lets the Looking timeout
+    // below flip the status text, since nothing else recomposes while the
+    // lookup is still running.
+    var tick by remember(document) { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(500)
+            tick++
+        }
+    }
+    val playheadMs = remember(tick) { positionMsProvider() }
+
+    // Past the timeout, the surface says "no lyrics" instead of "looking"
+    // — the same answer the fallback template gives after the same wait
+    // (CarLyricsScreen). Without this the surface could show "looking"
+    // forever while the template next to it had already given up.
+    var lookingSinceMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(glance is CarGlance.Looking) {
+        lookingSinceMs = if (glance is CarGlance.Looking) {
+            System.currentTimeMillis()
+        } else {
+            0L
+        }
+    }
+    val lookingTimedOut = glance is CarGlance.Looking && lookingSinceMs != 0L &&
+        System.currentTimeMillis() - lookingSinceMs > CarGlance.LOOKING_TIMEOUT_MS
+    val statusGlance = if (lookingTimedOut) CarGlance.None else glance
+
     Box(
         modifier
             .fillMaxSize()
@@ -76,12 +114,16 @@ fun CarLyricsContent(
         if (document != null) {
             LyricsView(
                 document = document,
-                positionMsProvider = positionMsProvider,
+                positionMsProvider = { playheadMs },
                 onSeek = onSeek,
+                // The car surface is not touchable, so following must never
+                // switch itself off: there is no "back to current line"
+                // button the driver could tap to resume it.
+                followAlways = true,
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            CarStatus(glance = glance)
+            CarStatus(glance = statusGlance)
         }
     }
 }

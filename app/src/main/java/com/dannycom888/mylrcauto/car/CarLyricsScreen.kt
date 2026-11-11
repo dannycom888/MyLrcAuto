@@ -63,7 +63,7 @@ class CarLyricsScreen(
         val artist: String,
         val transport: Transport,
         val playing: Boolean,
-        /** The glance has been "looking" longer than [LOOKING_TIMEOUT_MS]. */
+        /** The glance has been "looking" longer than [CarGlance.LOOKING_TIMEOUT_MS]. */
         val lookingTimedOut: Boolean,
         /**
          * Whether the app is drawing itself on the car's surface.
@@ -122,7 +122,7 @@ class CarLyricsScreen(
             null
         }
         val lookingTimedOut = lookingSinceMs?.let {
-            System.currentTimeMillis() - it > LOOKING_TIMEOUT_MS
+            System.currentTimeMillis() - it > CarGlance.LOOKING_TIMEOUT_MS
         } ?: false
 
         return Content(
@@ -165,9 +165,16 @@ class CarLyricsScreen(
                     .build(),
             )
             .apply {
-                // The header names the line being sung, so the driver can
-                // tell at a glance that the surface and the template agree.
+                // Three rows: the line before, the line being sung, the
+                // line after. The current line sits in the middle by
+                // position, so it needs no label or colour to identify it —
+                // and a template's colour spans are the host's to honour or
+                // ignore anyway. At the start of a song there is no previous
+                // line, at the end no next one.
                 if (glance is CarGlance.Now) {
+                    glance.previous?.let { previous ->
+                        addRow(Row.Builder().setTitle(previous).build())
+                    }
                     addRow(
                         Row.Builder()
                             .setTitle(
@@ -176,6 +183,9 @@ class CarLyricsScreen(
                             )
                             .build(),
                     )
+                    glance.next?.let { next ->
+                        addRow(Row.Builder().setTitle(next).build())
+                    }
                 }
             }
 
@@ -214,6 +224,13 @@ class CarLyricsScreen(
     private fun Content.lyrics(glance: CarGlance.Now): Template {
         val pane = Pane.Builder()
 
+        // Same three rows as the on-surface template: previous, current,
+        // next. The middle position identifies the current line, so the
+        // "Next:" prefix is gone.
+        glance.previous?.let { previous ->
+            pane.addRow(Row.Builder().setTitle(previous).build())
+        }
+
         val current = Row.Builder()
             .setTitle(
                 glance.line?.takeIf { it.isNotBlank() }
@@ -221,12 +238,8 @@ class CarLyricsScreen(
             )
         pane.addRow(current.build())
 
-        glance.next?.takeIf { it.isNotBlank() }?.let { next ->
-            pane.addRow(
-                Row.Builder()
-                    .setTitle(carContext.getString(R.string.car_next, next))
-                    .build(),
-            )
+        glance.next?.let { next ->
+            pane.addRow(Row.Builder().setTitle(next).build())
         }
 
         val template = PaneTemplate.Builder(pane.build())
@@ -322,13 +335,6 @@ class CarLyricsScreen(
          * second, and the fix is to let the second one wait for the next tick.
          */
         const val MIN_REDRAW_GAP_MS = 1_000L
-
-        /**
-         * How long the car shows the loading spinner while lyrics are still
-         * being looked up. Past this, the driver gets the "no lyrics"
-         * message instead of a spinner that never ends.
-         */
-        const val LOOKING_TIMEOUT_MS = 30_000L
     }
 }
 

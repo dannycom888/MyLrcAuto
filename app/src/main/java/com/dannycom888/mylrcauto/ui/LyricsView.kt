@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LyricsDocument
+import kotlinx.coroutines.CancellationException
 
 /**
  * The shared lyrics list, used by the phone screen and the car surface.
@@ -44,6 +45,10 @@ import com.dannycom888.mylrcauto.lyrics.LyricsDocument
  * list stops following and a "back to current line" button appears; tapping
  * it resumes following. Tapping any line seeks to it via [onSeek].
  *
+ * [followAlways] is for surfaces that are not touchable (the car): a drag
+ * can never switch following off there, and there is no button to resume it
+ * with, so following simply stays on.
+ *
  * An empty document renders nothing; the caller owns the empty state.
  */
 @Composable
@@ -52,6 +57,7 @@ fun LyricsView(
     positionMsProvider: () -> Long,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    followAlways: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val currentIndex = document.indexAt(positionMsProvider())
@@ -61,8 +67,11 @@ fun LyricsView(
 
     // A drag is the user taking the scroll for themselves: stop following
     // until they ask to come back. (Programmatic scrolls do not produce a
-    // DragInteraction, so following never switches itself off.)
+    // DragInteraction, so following never switches itself off.) Skipped
+    // entirely when followAlways is set: on a non-touchable surface a lost
+    // follow could never be resumed.
     LaunchedEffect(listState) {
+        if (followAlways) return@LaunchedEffect
         listState.interactionSource.interactions.collect { interaction ->
             if (interaction is DragInteraction.Start) {
                 followCurrent = false
@@ -75,12 +84,21 @@ fun LyricsView(
     // Scroll so the current line lands on the third visible row, with two
     // lines of context above it (clamped to the top at the start of a song).
     // The target is clamped to the document and the scroll is guarded: a
-    // scroll must never crash the composition on the car surface.
+    // scroll must never crash the composition on the car surface. If the
+    // animated scroll fails, fall back to an instant jump — except for
+    // cancellation, which means this effect is restarting and must be let
+    // through so the new run can take over.
     LaunchedEffect(currentIndex, followCurrent) {
         if (followCurrent && currentIndex >= 0) {
             val target = (currentIndex - 2).coerceAtLeast(0)
                 .coerceAtMost((document.lines.size - 1).coerceAtLeast(0))
-            runCatching { listState.animateScrollToItem(target) }
+            try {
+                listState.animateScrollToItem(target)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                runCatching { listState.scrollToItem(target) }
+            }
         }
     }
 

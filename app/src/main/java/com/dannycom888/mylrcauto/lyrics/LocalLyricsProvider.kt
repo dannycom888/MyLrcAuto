@@ -317,7 +317,23 @@ class LocalLyricsProvider(
                 audio = index.audio.map { it.file },
             )
             withContext(ioDispatcher) {
-                cacheFile().writeText(json)
+                // Publish atomically: write to a temp file, then rename it
+                // over the cache. A fresh process reading the cache while a
+                // rebuild is saving must see the old complete file or the
+                // new complete file, never a half-written one — the strict
+                // parser rejects a torn file, and that rejection forces a
+                // full folder walk on the next launch, which is exactly the
+                // cold-start spin this cache exists to avoid. A process
+                // killed mid-save (easy on car re-entry churn) leaves the
+                // previous good cache in place.
+                val tmpFile = File(context.filesDir, "$CACHE_FILE_NAME.tmp")
+                tmpFile.writeText(json)
+                if (!tmpFile.renameTo(cacheFile())) {
+                    // Same directory, so this should not happen; fall back
+                    // to a direct write rather than losing the cache.
+                    tmpFile.delete()
+                    cacheFile().writeText(json)
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Could not save lyrics index cache", e)

@@ -42,6 +42,8 @@ sealed interface CarGlance {
     /**
      * The words being sung, and the ones coming.
      *
+     * @param previous the last line with words in it before the current
+     *   one, or null at the start of the song.
      * @param line null during an instrumental passage or an intro — there is
      *   nothing being sung, and inventing something to fill the row would be
      *   a lie the driver has to read to discount.
@@ -49,12 +51,23 @@ sealed interface CarGlance {
      * @param instrumental true when the song is between vocal lines.
      */
     data class Now(
+        val previous: String?,
         val line: String?,
         val next: String?,
         val instrumental: Boolean,
     ) : CarGlance
 
     companion object {
+
+        /**
+         * How long the car shows "looking for lyrics" before giving up and
+         * saying there are no lyrics instead. Both car paths — the fallback
+         * template ([CarLyricsScreen]) and the drawn surface
+         * ([CarLyricsContent]) — use this one value, so the driver gets
+         * words instead of a spinner after the same wait whichever path is
+         * showing.
+         */
+        const val LOOKING_TIMEOUT_MS = 30_000L
 
         /**
          * @param positionMs the playhead, from the media snapshot — the car
@@ -96,6 +109,8 @@ sealed interface CarGlance {
             val line = active?.text?.takeIf { it.isNotBlank() }
 
             return Now(
+                previous = lines.take(activeIndex.coerceAtLeast(0))
+                    .lastOrNull { it.text.isNotBlank() }?.text,
                 line = line,
                 next = lines.drop((activeIndex + 1).coerceAtLeast(0))
                     .firstOrNull { it.text.isNotBlank() }?.text,
