@@ -1,6 +1,10 @@
-# My LRC Auto 1.0.5
+# My LRC Auto 1.0.6
 
 用户自己的原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
+
+## v1.0.6 变化
+
+全屏时左上的小方框现在显示专辑封面：封面大图在上面，歌名和歌手在下面；切歌时封面跟着换，没有封面的歌显示 App 的 M 音符图标。封面只取 Poweramp 自己提供的（播放信息里的图，或本地 content:// 封面），不联网下载；分屏三行小卡片、歌词面板滚动、30 秒查找超时这些 v1.0.5 的内容都不变。
 
 ## v1.0.5 变化
 
@@ -28,7 +32,7 @@
 - 歌词只来自你选的本地文件夹（SAF 选一次，递归扫描），按正在放的音频文件找主干完全相同的 `.lrc`（Poweramp 的配对规则）；多歌手切分 + 歌名匹配做后备；UTF-8 读不了转 GBK
 - 启动时预建一次文件索引（1092 个 `.lrc` 也一次扫完），不在播放时现扫
 - 手机界面：整首歌词列表，当前行高亮、自动跟随，可点一行快进
-- 车机界面：整首歌词显示在车机屏幕上（MapWithContentTemplate + 自己的绘制层），带上一曲/播放暂停/下一曲
+- 车机界面：整首歌词显示在车机屏幕上（MapWithContentTemplate + 自己的绘制层），带上一曲/播放暂停/下一曲；全屏时左上小方框显示专辑封面（没有封面的歌显示 M 音符图标）
 - 中文界面，设置顶部可切换语言（跟随系统 / 中文（简体）/ English），立即生效
 - 图标：深蓝底车头 + 前面一个白色 M 形音符
 
@@ -45,11 +49,11 @@
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 27 个测试，0 失败
+gradle_build :app:testDebugUnitTest   # 47 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.5（versionCode 7），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.6（versionCode 8），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 
