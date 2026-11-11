@@ -1,8 +1,13 @@
-# My LRC Auto 1.0.7
+# My LRC Auto 1.0.8
 
 Your own original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on your phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.8
+
+- **Smaller icon**: the note and car are now smaller inside the icon, with comfortable space to the edges (same design otherwise: deep-blue background #051E3C, glowing white M note, white car with round headlights and a smile).
+- **Previous-track icon fixed**: on the phone lyrics screen, the previous button is now the exact mirror of the next button (|◀ mirrors ▶|). It used to render as a tall triangle leaning right, sitting too low.
 
 ## What's new in 1.0.7
 
@@ -42,11 +47,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 51 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 53 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.7 (versionCode 9), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.8 (versionCode 10), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 

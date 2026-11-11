@@ -1,10 +1,13 @@
-# My LRC Auto 1.0.7
+# My LRC Auto 1.0.8
 
 用户自己的原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
 
-## v1.0.7 变化
+## v1.0.8 变化
+
+- 图标改小了：音符和汽车在图标里缩小了一圈，离边沿留了足够空隙（其他不变：深蓝底 #051E3C、发光白 M 音符、圆眼睛笑嘴的白车）。
+- 修了上一首图标：手机歌词界面底部的上一首按钮，现在是下一首的精确镜像（|◀ 对 ▶|）。以前它画出来是个往右歪的高三角、位置还偏低。
 
 - 设置里新增“歌词大小”：滑块调 14–32 sp，默认 17 sp（就是原来的大小），手机和车机上的歌词一起变，重启后保留。
 - 设置里新增“保持屏幕常亮”开关：打开后看歌词时屏幕不自动熄灭，离开歌词界面就恢复正常，重启后保留。
@@ -43,7 +46,7 @@
 - 车机界面：整首歌词显示在车机屏幕上（MapWithContentTemplate + 自己的绘制层），带上一曲/播放暂停/下一曲；全屏时左上小方框显示专辑封面（没有封面的歌显示 M 音符图标）
 - 中文界面，设置顶部可切换语言（跟随系统 / 中文（简体）/ English），立即生效
 - 设置里可调歌词大小（14–32 sp）和保持屏幕常亮，两个设置都保存、重启保留
-- 图标：深蓝底（#051E3C），白色 M 形音符在上、发光白车在下，两者对准中线几乎贴在一起，车有圆眼睛和笑嘴
+- 图标：深蓝底（#051E3C），白色 M 形音符在上、发光白车在下，两者对准中线几乎贴在一起，车有圆眼睛和笑嘴；图形缩小了一圈，离边沿留了空隙
 
 ## 安装（APK 不在 Play 商店）
 
@@ -58,11 +61,11 @@
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 51 个测试，0 失败
+gradle_build :app:testDebugUnitTest   # 53 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.7（versionCode 9），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.8（versionCode 10），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 
