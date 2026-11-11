@@ -244,7 +244,17 @@ class MediaSessionRepository(
         }
 
         selected = winner
-        _snapshot.value = winner.toSnapshot()
+        val previous = _snapshot.value
+        val fresh = winner.toSnapshot()
+        _snapshot.value = fresh.copy(
+            // A new track starts at 0: the state read here can still carry
+            // the old track's position (see resetIfTrackChanged).
+            playback = fresh.playback.resetIfTrackChanged(
+                oldTrack = previous.track,
+                newTrack = fresh.track,
+                nowElapsed = SystemClock.elapsedRealtime(),
+            ),
+        )
         updateTicker()
     }
 
@@ -315,12 +325,19 @@ class MediaSessionRepository(
         // snapshot goes out without it and the bitmap arrives in a later
         // one. A metadata bitmap is scaled down before it is kept: the
         // template's image travels to the car host over Binder.
-        val art = md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?.let { Artwork.scaleDown(it) }
-            ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        //
+        // Guarded: a bad metadata bitmap (recycled, malformed, huge) must
+        // never throw out of publish(), which runs on the main thread from
+        // framework callbacks — that would take the whole car app down. On
+        // failure the cover is simply null and the URI path below still runs.
+        val art = runCatching {
+            md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?.let { Artwork.scaleDown(it) }
-            ?: md?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-                ?.let { Artwork.scaleDown(it) }
+                ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                    ?.let { Artwork.scaleDown(it) }
+                ?: md?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+                    ?.let { Artwork.scaleDown(it) }
+        }.getOrNull()
             ?: artworkCache.get(track.artworkUri).also { if (it == null) loadArtwork(track) }
 
         return PlayerSnapshot(

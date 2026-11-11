@@ -52,6 +52,29 @@ data class PlaybackPosition(
         return if (durationMs > 0) projected.coerceIn(0L, durationMs) else projected.coerceAtLeast(0L)
     }
 
+    /**
+     * A new track starts at 0 — never with the old track's playhead.
+     *
+     * The player can publish a new track's metadata before it updates the
+     * playback state, so a fresh snapshot can inherit the old track's
+     * near-end position and timestamp. [currentMs] then clamps that to the
+     * new track's duration and the playhead never advances again, which
+     * leaves the lyrics highlight stuck on the last line. A position from
+     * before the change belongs to the old track, so it is discarded. When
+     * there was no previous track (the app just started mid-song) or the
+     * track did not change, the state's own position is trusted as-is.
+     */
+    fun resetIfTrackChanged(
+        oldTrack: TrackInfo?,
+        newTrack: TrackInfo?,
+        nowElapsed: Long,
+    ): PlaybackPosition {
+        if (oldTrack == null || oldTrack.isEmpty) return this
+        if (newTrack == null || newTrack.isEmpty) return this
+        if (oldTrack.key == newTrack.key) return this
+        return copy(positionMs = 0L, atElapsedRealtime = nowElapsed)
+    }
+
     companion object {
         val IDLE = PlaybackPosition()
     }

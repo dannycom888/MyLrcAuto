@@ -1,12 +1,19 @@
 package com.dannycom888.mylrcauto.car
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -16,10 +23,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -107,26 +120,97 @@ fun CarLyricsContent(
         System.currentTimeMillis() - lookingSinceMs > CarGlance.LOOKING_TIMEOUT_MS
     val statusGlance = if (lookingTimedOut) CarGlance.None else glance
 
-    Box(
+    Row(
         modifier
             .fillMaxSize()
             .background(Color(0xFF101820)),
     ) {
-        if (document != null) {
-            LyricsView(
-                document = document,
-                positionMsProvider = { playheadMs },
-                onSeek = onSeek,
-                // The car surface is not touchable, so following must never
-                // switch itself off: there is no "back to current line"
-                // button the driver could tap to resume it.
-                followAlways = true,
-                // Same size setting as the phone: one slider sizes both.
-                fontSizeSp = settings.lyricsFontSizeSp,
-                modifier = Modifier.fillMaxSize(),
+        // The cover lives here, in a column on the left, beside the lyrics
+        // — never above them, so the list keeps its full height (see
+        // CoverColumn). Shown whenever a track is playing.
+        if (snapshot.hasTrack) {
+            CoverColumn(
+                artwork = snapshot.artwork,
+                title = snapshot.track?.title?.takeIf { it.isNotBlank() }
+                    ?: stringResource(R.string.app_name),
+                artist = snapshot.track?.artist.orEmpty(),
             )
-        } else {
-            CarStatus(glance = statusGlance)
+        }
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            if (document != null) {
+                LyricsView(
+                    document = document,
+                    positionMsProvider = { playheadMs },
+                    onSeek = onSeek,
+                    // The car surface is not touchable, so following must never
+                    // switch itself off: there is no "back to current line"
+                    // button the driver could tap to resume it.
+                    followAlways = true,
+                    // Same size setting as the phone: one slider sizes both.
+                    fontSizeSp = settings.lyricsFontSizeSp,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                CarStatus(glance = statusGlance)
+            }
+        }
+    }
+}
+
+/**
+ * The current track's cover, title and artist, in a column on the left of
+ * the surface, beside the lyrics.
+ *
+ * The cover lives here, not in the template pane: this car's system ignores
+ * Pane.setImage in the MapWithContentTemplate content pane (title and
+ * artist show, no image at all), while the surface is drawn by the app
+ * itself, so a cover drawn here is guaranteed visible. It sits beside the
+ * lyrics, never above them, so the list keeps its full height. The cover
+ * comes from the player's own metadata (see MediaSessionRepository); a
+ * recycled bitmap is treated as no cover, and the app's M-note icon stands
+ * in when the player publishes none.
+ */
+@Composable
+private fun CoverColumn(
+    artwork: Bitmap?,
+    title: String,
+    artist: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .width(212.dp)
+            .fillMaxHeight()
+            .padding(start = 20.dp, top = 16.dp, end = 12.dp, bottom = 16.dp),
+    ) {
+        val cover = artwork?.takeUnless { it.isRecycled }?.asImageBitmap()
+            ?: ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)
+        Image(
+            bitmap = cover,
+            contentDescription = null,
+            modifier = Modifier
+                .size(180.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Crop,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (artist.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = artist,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 15.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

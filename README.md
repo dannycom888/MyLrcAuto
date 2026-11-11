@@ -1,8 +1,15 @@
-# My LRC Auto 1.0.8
+# My LRC Auto 1.0.9
 
 Your own original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on your phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.9
+
+- **Second song no longer freezes**: when a track changes, the new song now starts from 0 instead of inheriting the old song's near-end position — before, the highlight stayed stuck on the last line and the list never scrolled on the second song. The list also starts back at the top on a new song.
+- **Cover moved to the left of the lyrics**: this car's system ignores the cover image in the full-screen title pane, so the cover now sits in a column on the left of the full-screen lyrics (square cover with title and artist underneath), and the lyrics list keeps its full height. Songs without a cover show the app's M-note icon.
+- **Crash hardening**: a bad album-cover bitmap can no longer take the car app down, and if building the car screen ever fails, the app now shows a short message instead of the "unexpected error" dialog.
+- **Icon**: the M-note moved slightly left (same design otherwise).
 
 ## What's new in 1.0.8
 
@@ -29,10 +36,10 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 - Lyrics come only from a folder you pick (SAF, picked once, scanned recursively), matched by the audio file's identical filename stem (Poweramp's pairing rule); multi-artist split + title matching as fallback; UTF-8 with GBK fallback
 - The file index is pre-built once at startup (1092 `.lrc` files in one pass), never scanned lazily during playback
 - Phone: full lyrics list, current line highlighted and auto-followed, tap a line to seek
-- Car: full lyrics on the head unit (MapWithContentTemplate + its own surface), with previous / play-pause / next; in full-screen the top-left box shows the album cover (M-note icon when there is none)
+- Car: full lyrics on the head unit (MapWithContentTemplate + its own surface), with previous / play-pause / next; in full-screen the cover sits in a column on the left of the lyrics list (M-note icon when there is none)
 - Chinese UI, with an in-app language switch at the top of Settings (follow system / 中文（简体）/ English), effective immediately
 - Lyrics size (14–32 sp) and keep-screen-on can be set in Settings; both persist across restarts
-- Icon: deep blue (#051E3C), white M-shaped note above a glowing white car, both centred and almost touching; the car has round headlights and a smile
+- Icon: deep blue (#051E3C), white M-shaped note above a glowing white car, the note slightly left of the car's centre; the car has round headlights and a smile
 
 ## Install (the APK is not on the Play Store)
 
@@ -47,11 +54,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 53 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 58 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.8 (versionCode 10), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.9 (versionCode 11), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 

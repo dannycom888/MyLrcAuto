@@ -16,7 +16,7 @@ import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import android.graphics.Bitmap
+import android.util.Log
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.media.Transport
@@ -67,13 +67,6 @@ class CarLyricsScreen(
         /** The glance has been "looking" longer than [CarGlance.LOOKING_TIMEOUT_MS]. */
         val lookingTimedOut: Boolean,
         /**
-         * The current track's cover, or null while a URI cover is still
-         * loading or the player publishes none. Bitmaps compare by
-         * identity, so the same cover does not redraw the pane every tick
-         * while a new one — a track change, or a URI cover arriving — does.
-         */
-        val artwork: Bitmap?,
-        /**
          * Whether the app is drawing itself on the car's surface.
          *
          * Part of the compared value rather than read at draw time, so a
@@ -92,9 +85,13 @@ class CarLyricsScreen(
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 var lastRedrawAt = 0L
                 while (true) {
-                    val next = compose()
+                    // Guarded, like onGetTemplate: one bad compose must not
+                    // kill the tick loop (and with it every later redraw).
+                    val next = runCatching { compose() }.onFailure {
+                        Log.w(TAG, "compose failed, keeping the last template", it)
+                    }.getOrNull()
                     val now = System.currentTimeMillis()
-                    if (next != shown && now - lastRedrawAt >= MIN_REDRAW_GAP_MS) {
+                    if (next != null && next != shown && now - lastRedrawAt >= MIN_REDRAW_GAP_MS) {
                         lastRedrawAt = now
                         invalidate()
                     }
@@ -109,9 +106,19 @@ class CarLyricsScreen(
         // the host asks for a template at moments of its own choosing, and
         // answering with whatever was true a second ago would put a stale
         // line on the screen.
-        val content = compose()
-        shown = content
-        return content.toTemplate()
+        //
+        // Guarded: a template that throws takes the whole car app down with
+        // the host's "unexpected error" dialog, and a bad bitmap or a bad
+        // line is not worth that. A minimal message is a complete answer;
+        // the next tick recomposes and replaces it.
+        return try {
+            val content = compose()
+            shown = content
+            content.toTemplate()
+        } catch (e: Exception) {
+            Log.w(TAG, "template build failed, showing a message instead", e)
+            message(R.string.car_none, R.string.car_none_body)
+        }
     }
 
     private fun compose(): Content {
@@ -141,7 +148,6 @@ class CarLyricsScreen(
             transport = snapshot.transport,
             playing = playback.isPlaying,
             lookingTimedOut = lookingTimedOut,
-            artwork = snapshot.artwork,
             onSurface = surface.live.value &&
                 // MapWithContentTemplate is @RequiresCarApi(7) while this app
                 // admits hosts from level 1, and a surface arrives from
@@ -166,18 +172,21 @@ class CarLyricsScreen(
     }
 
     private fun Content.onSurfaceTemplate(): Template {
-        // Title strip only, with the cover above it. The surface itself is
-        // already drawing the full lyrics list, so repeating lines here
-        // would just duplicate them — but the strip cannot go away
-        // entirely: MapWithContentTemplate needs a content pane, and
-        // without one the host shows no surface at all. The cover is the
-        // pane's image, so the box is a big cover card now rather than a
-        // bare title row; its outer size is the host's, not ours. The
-        // three-line card (previous / current / next) lives in the fallback
-        // template, which is what the car shows in split-screen, where the
-        // host draws the template and grants no surface.
+        // Title strip only. The surface itself is already drawing the full
+        // lyrics list, so repeating lines here would just duplicate them —
+        // but the strip cannot go away entirely: MapWithContentTemplate
+        // needs a content pane, and without one the host shows no surface
+        // at all.
+        //
+        // The cover is NOT the pane's image: this car's system ignores
+        // Pane.setImage in the content pane (two photos: title and artist
+        // show, no image at all, not even the fallback icon), so the cover
+        // lives in the surface instead (CarLyricsContent), where the app
+        // draws it itself. The three-line card (previous / current / next)
+        // lives in the fallback template, which is what the car shows in
+        // split-screen, where the host draws the template and grants no
+        // surface.
         val pane = Pane.Builder()
-            .setImage(coverIcon())
             .addRow(
                 Row.Builder()
                     .setTitle(title)
@@ -196,19 +205,6 @@ class CarLyricsScreen(
 
         transportStrip()?.let { template.setActionStrip(it) }
         return template.build()
-    }
-
-    /**
-     * The pane's cover: the current track's artwork, or the app's M-note
-     * icon when the player publishes none (or its URI cover is still
-     * loading). Never a previous track's cover — every publish builds a
-     * fresh snapshot from the current metadata, so a new track starts at
-     * null and only its own artwork replaces it.
-     */
-    private fun Content.coverIcon(): CarIcon {
-        val icon = artwork?.let { IconCompat.createWithBitmap(it) }
-            ?: IconCompat.createWithResource(carContext, R.drawable.ic_launcher_foreground)
-        return CarIcon.Builder(icon).build()
     }
 
     private fun Content.fallback(): Template = when (glance) {
@@ -328,6 +324,8 @@ class CarLyricsScreen(
             .build()
 
     private companion object {
+
+        const val TAG = "MyLrcAutoCarScreen"
 
         /**
          * How often the playhead is re-examined. Half a second is

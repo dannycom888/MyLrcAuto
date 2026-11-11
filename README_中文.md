@@ -1,8 +1,15 @@
-# My LRC Auto 1.0.8
+# My LRC Auto 1.0.9
 
 用户自己的原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
+
+## v1.0.9 变化
+
+- 第二首歌不再卡住不动：切歌时新歌现在从 0 开始，不再继承上一首快播完的位置——以前第二首歌高亮会停在最后一句、列表也不滚动；换歌时列表也回到顶部。
+- 封面改到歌词左边：这台车机不显示全屏标题框里的封面图，所以封面现在放在全屏歌词左边的那一列（方形封面，下面是歌名和歌手），歌词列表保持整屏高度。没有封面的歌显示 App 的 M 音符图标。
+- 防崩溃加固：坏的专辑封面图不再能把车机 App 拖垮；万一车机界面构建失败，App 现在显示一句提示，而不是弹出“出现意外错误”。
+- 图标：M 音符往左挪了一点（其他不变）。
 
 ## v1.0.8 变化
 
@@ -43,10 +50,10 @@
 - 歌词只来自你选的本地文件夹（SAF 选一次，递归扫描），按正在放的音频文件找主干完全相同的 `.lrc`（Poweramp 的配对规则）；多歌手切分 + 歌名匹配做后备；UTF-8 读不了转 GBK
 - 启动时预建一次文件索引（1092 个 `.lrc` 也一次扫完），不在播放时现扫
 - 手机界面：整首歌词列表，当前行高亮、自动跟随，可点一行快进
-- 车机界面：整首歌词显示在车机屏幕上（MapWithContentTemplate + 自己的绘制层），带上一曲/播放暂停/下一曲；全屏时左上小方框显示专辑封面（没有封面的歌显示 M 音符图标）
+- 车机界面：整首歌词显示在车机屏幕上（MapWithContentTemplate + 自己的绘制层），带上一曲/播放暂停/下一曲；全屏时封面在歌词列表左边的那一列（没有封面的歌显示 M 音符图标）
 - 中文界面，设置顶部可切换语言（跟随系统 / 中文（简体）/ English），立即生效
 - 设置里可调歌词大小（14–32 sp）和保持屏幕常亮，两个设置都保存、重启保留
-- 图标：深蓝底（#051E3C），白色 M 形音符在上、发光白车在下，两者对准中线几乎贴在一起，车有圆眼睛和笑嘴；图形缩小了一圈，离边沿留了空隙
+- 图标：深蓝底（#051E3C），白色 M 形音符在上、发光白车在下，音符略偏左、车在中线，两者几乎贴在一起，车有圆眼睛和笑嘴；图形缩小了一圈，离边沿留了空隙
 
 ## 安装（APK 不在 Play 商店）
 
@@ -61,11 +68,11 @@
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 53 个测试，0 失败
+gradle_build :app:testDebugUnitTest   # 58 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.8（versionCode 10），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.9（versionCode 11），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 

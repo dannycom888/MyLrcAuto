@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -76,7 +76,11 @@ fun LyricsView(
     followAlways: Boolean = false,
     fontSizeSp: Int = 17,
 ) {
-    val listState = rememberLazyListState()
+    // Keyed on the document, so a new song starts at the top: without the
+    // key the scroll position carried over from the previous song, and the
+    // second song opened already scrolled to its end. LyricsDocument is a
+    // data class, so re-emission of equal content keeps the state.
+    val listState = remember(document) { LazyListState() }
     val currentIndex = document.indexAt(positionMsProvider())
 
     // A new document starts by following the line that is playing.
