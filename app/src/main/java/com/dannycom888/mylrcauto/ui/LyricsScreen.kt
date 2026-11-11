@@ -63,13 +63,24 @@ private fun transportIcon(name: String, pathData: String): ImageVector =
         )
     }.build()
 
+/** Path data for the transport icons. Kept as constants so tests can assert
+ * the previous/next pair are exact horizontal mirrors (see TransportIconsTest).
+ * NOTE: every subpath starts with an ABSOLUTE moveto (M). A relative moveto
+ * (m) after a close (z) is resolved by the Compose path parser against the
+ * point before the close, not the subpath start — the old SkipPrevious path
+ * ("...H6zm3.5,6...") therefore drew its triangle 6 units too low, and on
+ * the phone it showed up as a tall triangle leaning right instead of |◀
+ * (user report 2026-11-10). */
+internal const val SkipNextPathData = "M6,18l8.5,-6L6,6v12zM16,6v12h2V6h-2z"
+internal const val SkipPreviousPathData = "M6,6h2v12H6zM18,6l-8.5,6L18,18z"
+
 private val PlayIcon by lazy { transportIcon("PlayArrow", "M8,5v14l11,-7z") }
 private val PauseIcon by lazy { transportIcon("Pause", "M6,19h4V5H6v14zm8,-14v14h4V5h-4z") }
 private val SkipNextIcon by lazy {
-    transportIcon("SkipNext", "M6,18l8.5,-6L6,6v12zM16,6v12h2V6h-2z")
+    transportIcon("SkipNext", SkipNextPathData)
 }
 private val SkipPreviousIcon by lazy {
-    transportIcon("SkipPrevious", "M6,6h2v12H6zm3.5,6l8.5,6V6z")
+    transportIcon("SkipPrevious", SkipPreviousPathData)
 }
 private val SettingsIcon by lazy {
     transportIcon(
