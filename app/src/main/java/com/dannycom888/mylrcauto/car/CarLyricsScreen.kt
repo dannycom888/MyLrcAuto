@@ -157,6 +157,14 @@ class CarLyricsScreen(
     }
 
     private fun Content.onSurfaceTemplate(): Template {
+        // Title strip only. The surface itself is already drawing the full
+        // lyrics list, so repeating lines here would just duplicate them —
+        // but the strip cannot go away entirely: MapWithContentTemplate
+        // needs a content pane, and without one the host shows no surface
+        // at all. The three-line card (previous / current / next) lives in
+        // the fallback template, which is what the car shows in
+        // split-screen, where the host draws the template and grants no
+        // surface.
         val pane = Pane.Builder()
             .addRow(
                 Row.Builder()
@@ -164,32 +172,9 @@ class CarLyricsScreen(
                     .apply { if (artist.isNotEmpty()) addText(artist) }
                     .build(),
             )
-            .apply {
-                // Three rows: the line before, the line being sung, the
-                // line after. The current line sits in the middle by
-                // position, so it needs no label or colour to identify it —
-                // and a template's colour spans are the host's to honour or
-                // ignore anyway. At the start of a song there is no previous
-                // line, at the end no next one.
-                if (glance is CarGlance.Now) {
-                    glance.previous?.let { previous ->
-                        addRow(Row.Builder().setTitle(previous).build())
-                    }
-                    addRow(
-                        Row.Builder()
-                            .setTitle(
-                                glance.line?.takeIf { it.isNotBlank() }
-                                    ?: carContext.getString(R.string.car_instrumental),
-                            )
-                            .build(),
-                    )
-                    glance.next?.let { next ->
-                        addRow(Row.Builder().setTitle(next).build())
-                    }
-                }
-            }
+            .build()
 
-        val content = PaneTemplate.Builder(pane.build())
+        val content = PaneTemplate.Builder(pane)
             .setTitle(carContext.getString(R.string.app_name))
             .setHeaderAction(Action.BACK)
             .build()
