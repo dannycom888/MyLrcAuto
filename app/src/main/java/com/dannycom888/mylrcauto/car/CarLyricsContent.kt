@@ -125,9 +125,20 @@ fun CarLyricsContent(
             .fillMaxSize()
             .background(Color(0xFF101820)),
     ) {
-        // The cover lives here, in a column on the left, beside the lyrics
-        // — never above them, so the list keeps its full height (see
-        // CoverColumn). Shown whenever a track is playing.
+        // The cover lives here, in a column on the left of the VISIBLE
+        // area, beside the lyrics — never above them, so the list keeps
+        // its full height (see CoverColumn). Shown whenever a track is
+        // playing.
+        //
+        // It cannot go BELOW the template pane (the top-left box): the
+        // region under the pane is not the app's surface. The host grants
+        // the surface, then reports the unobstructed part as the visible
+        // area — and on this car that rectangle starts to the RIGHT of the
+        // pane column (the car's own photo proves it: the app's content
+        // begins ~60% across the screen, with the whole left strip below
+        // the pane empty). The pane column is host-reserved space for the
+        // full height, so there is nowhere below the pane to draw. The
+        // narrower column (v1.0.10) is the app-side answer instead.
         if (snapshot.hasTrack) {
             CoverColumn(
                 artwork = snapshot.artwork,
@@ -169,6 +180,11 @@ fun CarLyricsContent(
  * comes from the player's own metadata (see MediaSessionRepository); a
  * recycled bitmap is treated as no cover, and the app's M-note icon stands
  * in when the player publishes none.
+ *
+ * Narrow (v1.0.10): the column is 172dp with a 140dp cover, down from
+ * 212dp / 180dp — the pane on this car cannot be moved, so giving the
+ * lyrics ~40dp more width is the app-side answer to "more room for the
+ * lyrics".
  */
 @Composable
 private fun CoverColumn(
@@ -179,9 +195,9 @@ private fun CoverColumn(
 ) {
     Column(
         modifier = modifier
-            .width(212.dp)
+            .width(172.dp)
             .fillMaxHeight()
-            .padding(start = 20.dp, top = 16.dp, end = 12.dp, bottom = 16.dp),
+            .padding(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 16.dp),
     ) {
         val cover = artwork?.takeUnless { it.isRecycled }?.asImageBitmap()
             ?: ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)
@@ -189,7 +205,7 @@ private fun CoverColumn(
             bitmap = cover,
             contentDescription = null,
             modifier = Modifier
-                .size(180.dp)
+                .size(140.dp)
                 .clip(RoundedCornerShape(8.dp)),
             contentScale = ContentScale.Crop,
         )

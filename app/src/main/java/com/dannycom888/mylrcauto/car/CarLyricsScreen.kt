@@ -11,7 +11,6 @@ import androidx.car.app.model.PaneTemplate
 import androidx.car.app.model.Row
 import androidx.car.app.model.Template
 import androidx.car.app.navigation.model.MapWithContentTemplate
-import androidx.car.app.versioning.CarAppApiLevels
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -21,6 +20,7 @@ import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.media.Transport
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /**
@@ -78,6 +78,15 @@ class CarLyricsScreen(
     )
 
     init {
+        // Invalidate the moment the surface comes or goes — NOT gated on
+        // STARTED like the tick loop below. A host that takes the surface
+        // away in split-screen (or grants one) without the screen
+        // redrawing would otherwise leave the wrong template up until the
+        // next lyric line changes; lifecycleScope survives STOPPED, so this
+        // fires even while the screen is covered.
+        lifecycleScope.launch {
+            surface.live.collect { invalidate() }
+        }
         lifecycleScope.launch {
             // STARTED rather than CREATED: a screen with another pushed over
             // it is not visible, and recomputing lyrics nobody can see is
@@ -148,14 +157,17 @@ class CarLyricsScreen(
             transport = snapshot.transport,
             playing = playback.isPlaying,
             lookingTimedOut = lookingTimedOut,
-            onSurface = surface.live.value &&
-                // MapWithContentTemplate is @RequiresCarApi(7) while this app
-                // admits hosts from level 1, and a surface arrives from
-                // level 5 — so there is a real window where the app can be
-                // drawing happily and still have no template able to carry
-                // it. Asking the host what it understands is the difference
-                // between the fallback and a rejection.
-                carContext.carAppApiLevel >= CarAppApiLevels.LEVEL_7,
+            // Which template shows the lyrics is one decision, made in one
+            // place (chooseTemplate) so it can be unit-tested: a live
+            // surface alone is not enough — it also has to be wide enough
+            // to be a full screen rather than a split-screen slot, and the
+            // host has to actually be showing it.
+            onSurface = chooseTemplate(
+                surfaceLive = surface.live.value,
+                apiLevel = carContext.carAppApiLevel,
+                surfaceWidthDp = surface.surfaceWidthDp.value,
+                visibleAreaEmpty = surface.visibleArea.value?.isEmpty == true,
+            ) == TemplateChoice.ON_SURFACE,
         )
     }
 
@@ -186,6 +198,13 @@ class CarLyricsScreen(
         // lives in the fallback template, which is what the car shows in
         // split-screen, where the host draws the template and grants no
         // surface.
+        //
+        // The pane carries no title of its own: the pane's width on this
+        // car looks content-driven, and dropping the "My LRC Auto" strip
+        // is an attempt to narrow the host-drawn box so the lyrics get
+        // more room — harmless if the host shows the app name anyway. The
+        // pane itself stays: MapWithContentTemplate needs a content pane,
+        // and without one the host shows no surface at all.
         val pane = Pane.Builder()
             .addRow(
                 Row.Builder()
@@ -196,7 +215,6 @@ class CarLyricsScreen(
             .build()
 
         val content = PaneTemplate.Builder(pane)
-            .setTitle(carContext.getString(R.string.app_name))
             .setHeaderAction(Action.BACK)
             .build()
 

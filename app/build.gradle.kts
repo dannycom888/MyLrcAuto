@@ -39,8 +39,8 @@ android {
         applicationId = "com.dannycom888.mylrcauto"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.0.9"
+        versionCode = 12
+        versionName = "1.0.10"
     }
 
     if (canSignRelease) {

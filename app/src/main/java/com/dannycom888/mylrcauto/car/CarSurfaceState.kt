@@ -38,12 +38,31 @@ class CarSurfaceState {
      */
     val visibleArea: StateFlow<Rect?> = _visibleArea.asStateFlow()
 
+    private val _surfaceWidthDp = MutableStateFlow<Float?>(null)
+
+    /**
+     * The granted surface's width, in dp, or null when no surface is live.
+     *
+     * The screen uses it to tell a full-screen surface from a split-screen /
+     * dashboard slot: a host that only shows a corner of the app still
+     * reports the surface as live, so width is the only signal that the
+     * template — not the surface — should be showing the lyrics.
+     */
+    val surfaceWidthDp: StateFlow<Float?> = _surfaceWidthDp.asStateFlow()
+
     internal fun onLive(live: Boolean) {
         _live.value = live
-        if (!live) _visibleArea.value = null
+        if (!live) {
+            _visibleArea.value = null
+            _surfaceWidthDp.value = null
+        }
     }
 
     internal fun onVisibleArea(area: Rect) {
         _visibleArea.value = Rect(area)
+    }
+
+    internal fun onSurfaceSize(widthDp: Float) {
+        _surfaceWidthDp.value = widthDp
     }
 }

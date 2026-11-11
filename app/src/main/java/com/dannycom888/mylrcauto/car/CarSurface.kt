@@ -85,6 +85,11 @@ class CarSurface(
         }
         display = created
 
+        // The screen's template choice needs the granted width (in dp) to
+        // tell a full-screen surface from a split-screen slot: a host that
+        // only shows a corner of the app still reports the surface as live.
+        state.onSurfaceSize(width / (dpi / 160f))
+
         // Read fresh at call time, never captured: the snapshot only updates
         // when the player publishes, and the lyrics list re-reads the
         // playhead itself on every frame.

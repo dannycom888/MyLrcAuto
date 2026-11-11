@@ -1,8 +1,14 @@
-# My LRC Auto 1.0.9
+# My LRC Auto 1.0.10
 
 用户自己的原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
+
+## v1.0.10 变化
+
+- 分屏三行小卡片修好了：车机在分屏那格一直显示全屏布局，从不切到三行小卡片。现在 surface 一来一走就立刻刷新界面（不用等下一句歌词），还会看 surface 有多宽——活着但不到 600dp 宽的 surface 就是分屏那格，显示三行小卡片（上一句、正在唱的、下一句）。可见区域为空时也回落到小卡片。
+- 歌词更宽了：全屏歌词左边那列封面改窄了（140dp 封面、172dp 一列，原来是 180dp / 212dp），歌词列表多出约 40dp 宽。全屏左上小方框不再带“My LRC Auto”标题——想让车机画的那个框窄一点，因为框的位置和宽度是车机系统定的，App 移不动它。把封面放小框下面也查过了，这台车上做不到：小框下面的区域是车机留给模板的，不是 App 的画面——可见区域从小框右边才开始，所以封面只能留在歌词左边的那一列。没有加任何模糊：封面还是原样清晰显示。
+- 图标不变（v21）。
 
 ## v1.0.9 变化
 
@@ -68,11 +74,11 @@
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 58 个测试，0 失败
+gradle_build :app:testDebugUnitTest   # 65 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.9（versionCode 11），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.10（versionCode 12），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 
