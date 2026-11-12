@@ -198,6 +198,9 @@ fun CarLyricsContent(
                         followAlways = true,
                         // Same size setting as the phone: one slider sizes both.
                         fontSizeSp = settings.lyricsFontSizeSp,
+                        // Same font choice as the phone: the setting picks the
+                        // font on both surfaces at once.
+                        lyricsFont = settings.lyricsFont,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

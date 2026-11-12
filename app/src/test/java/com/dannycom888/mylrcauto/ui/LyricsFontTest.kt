@@ -2,6 +2,7 @@ package com.dannycom888.mylrcauto.ui
 
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -9,12 +10,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The Chinese lyrics font rule: a line with any CJK character draws in
- * the bundled Bauhaus font, bold; a line with none keeps the default
- * font, unchanged (bold only for the line being sung). The dashboard
- * card's subtitle is drawn by the car host, so its font is out of
- * scope — this rule covers the app's own surfaces only (the car
- * big-screen lyrics and the phone lyrics view, both [LyricsView]).
+ * The Chinese lyrics font rule, under the Settings font choice
+ * (歌词字体): Bauhaus — a line with any CJK character draws in the
+ * bundled Bauhaus font, bold; Original — the same line draws in the
+ * default font, bold only for the line being sung (the behaviour
+ * before v1.0.15). A line with no CJK character keeps the default
+ * font, unchanged (bold only for the line being sung), whichever
+ * choice is picked. The dashboard card's subtitle is drawn by the
+ * car host, so its font is out of scope — this rule covers the app's
+ * own surfaces only (the car big-screen lyrics and the phone lyrics
+ * view, both [LyricsView]).
  */
 class LyricsFontTest {
 
@@ -41,6 +46,55 @@ class LyricsFontTest {
         val other = lyricsFontSpec("I'm sitting here in a boring room", isCurrent = false)
         assertSame(FontFamily.Default, other.fontFamily)
         assertEquals(FontWeight.Normal, other.fontWeight)
+    }
+
+    @Test
+    fun originalChoiceKeepsChineseLinesOnDefaultFont() {
+        // Original = the pre-v1.0.15 behaviour: Chinese lines use the
+        // default font, bold only for the line being sung.
+        val current = lyricsFontSpec(
+            "一万个舍不得",
+            isCurrent = true,
+            fontChoice = LyricsFontChoice.ORIGINAL,
+        )
+        assertSame(FontFamily.Default, current.fontFamily)
+        assertEquals(FontWeight.Bold, current.fontWeight)
+
+        val other = lyricsFontSpec(
+            "毕竟我们深爱过",
+            isCurrent = false,
+            fontChoice = LyricsFontChoice.ORIGINAL,
+        )
+        assertSame(FontFamily.Default, other.fontFamily)
+        assertEquals(FontWeight.Normal, other.fontWeight)
+    }
+
+    @Test
+    fun bauhausChoiceIsTheDefault() {
+        // No choice passed: the default parameter is Bauhaus, so the
+        // v1.0.15 behaviour is what every existing call site gets.
+        val spec = lyricsFontSpec("一万个舍不得", isCurrent = false)
+        assertSame(ChineseLyricsFontFamily, spec.fontFamily)
+        assertEquals(FontWeight.Bold, spec.fontWeight)
+    }
+
+    @Test
+    fun englishLineIgnoresTheChoice() {
+        // English keeps the default font under either choice.
+        val bauhaus = lyricsFontSpec(
+            "Lemon Tree",
+            isCurrent = false,
+            fontChoice = LyricsFontChoice.BAUHAUS,
+        )
+        val original = lyricsFontSpec(
+            "Lemon Tree",
+            isCurrent = false,
+            fontChoice = LyricsFontChoice.ORIGINAL,
+        )
+        assertSame(FontFamily.Default, bauhaus.fontFamily)
+        assertSame(FontFamily.Default, original.fontFamily)
+        assertEquals(FontWeight.Normal, bauhaus.fontWeight)
+        assertEquals(FontWeight.Normal, original.fontWeight)
     }
 
     @Test

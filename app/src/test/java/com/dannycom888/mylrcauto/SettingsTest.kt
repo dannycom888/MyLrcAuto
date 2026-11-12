@@ -1,5 +1,7 @@
 package com.dannycom888.mylrcauto
 
+import com.dannycom888.mylrcauto.settings.LyricsFontChoice
+import com.dannycom888.mylrcauto.settings.Settings
 import com.dannycom888.mylrcauto.settings.SettingsStore
 import com.dannycom888.mylrcauto.ui.LyricsTextSize
 import org.junit.Assert.assertEquals
@@ -38,6 +40,16 @@ class SettingsTest {
         assertEquals(22, LyricsTextSize.currentSizeSp(17))
         assertEquals(30, LyricsTextSize.currentLineHeightSp(17))
         assertEquals(24, LyricsTextSize.lineHeightSp(17))
+    }
+
+    @Test
+    fun lyricsFontDefaultsToBauhaus() {
+        // The font choice defaults to Bauhaus, so adding the setting
+        // changes nothing for an existing install: Chinese lyrics
+        // stay in the bundled font, bold, exactly as in v1.0.15,
+        // until the user picks 原来的.
+        assertEquals(LyricsFontChoice.BAUHAUS, Settings().lyricsFont)
+        assertEquals(LyricsFontChoice.BAUHAUS, SettingsStore.DEFAULT_LYRICS_FONT)
     }
 
     @Test

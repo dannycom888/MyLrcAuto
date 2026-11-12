@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LyricsDocument
+import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -52,6 +53,10 @@ import kotlinx.coroutines.CancellationException
  * current line is 5 sp larger, exactly as it was when the sizes were
  * hardcoded (17 sp / 22 sp). Both the phone screen and the car surface pass
  * the same value, so one setting sizes both.
+ *
+ * [lyricsFont] is the Chinese lyrics font choice from Settings
+ * (Bauhaus or the original font); it is passed through to
+ * [lyricsFontSpec] per line. English lines are unaffected.
  *
  * An empty document renders nothing; the caller owns the empty state.
  */
@@ -87,6 +92,7 @@ fun LyricsView(
     modifier: Modifier = Modifier,
     followAlways: Boolean = false,
     fontSizeSp: Int = 17,
+    lyricsFont: LyricsFontChoice = LyricsFontChoice.BAUHAUS,
 ) {
     // Keyed on the document, so a new song starts at the top: without the
     // key the scroll position carried over from the previous song, and the
@@ -142,11 +148,12 @@ fun LyricsView(
         ) {
             itemsIndexed(document.lines, key = { index, _ -> index }) { index, line ->
                 val isCurrent = index == currentIndex
-                // Chinese lines draw in the bundled Bauhaus font, bold;
-                // English lines keep the default font, unchanged. The
-                // glowing current line keeps its colour and size either
-                // way — only the font and weight change here.
-                val fontSpec = lyricsFontSpec(line.text, isCurrent)
+                // Chinese lines draw in the chosen font (Bauhaus bold, or
+                // the original default font); English lines keep the
+                // default font, unchanged. The glowing current line keeps
+                // its colour and size either way — only the font and
+                // weight change here.
+                val fontSpec = lyricsFontSpec(line.text, isCurrent, lyricsFont)
                 Text(
                     text = line.text,
                     modifier = Modifier

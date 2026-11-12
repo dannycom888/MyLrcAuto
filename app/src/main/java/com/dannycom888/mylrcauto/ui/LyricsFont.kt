@@ -4,6 +4,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.dannycom888.mylrcauto.R
+import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 
 /**
  * The Chinese lyrics font: Bauhaus ITC, supplied by the user as a TTF
@@ -46,18 +47,37 @@ data class LyricsFontSpec(
 /**
  * The font for one lyric line.
  *
- * A line with any CJK character is a Chinese line: the bundled Bauhaus
- * font, always Bold (the current line and the other lines alike — the
- * user asked for Chinese lyrics in this font and bold). A line with no
- * CJK character is an English line: the default font, unchanged, Bold
- * only for the line being sung (the existing behaviour).
+ * A line with any CJK character is a Chinese line. Which font it draws
+ * in depends on [fontChoice] (Settings → 歌词字体):
+ * - [LyricsFontChoice.BAUHAUS] (the default): the bundled Bauhaus
+ *   font, always Bold (the current line and the other lines alike —
+ *   the user asked for Chinese lyrics in this font and bold).
+ * - [LyricsFontChoice.ORIGINAL]: the platform default font, Bold only
+ *   for the line being sung — the behaviour before v1.0.15.
+ *
+ * A line with no CJK character is an English line: the default font,
+ * unchanged, Bold only for the line being sung, whichever choice is
+ * picked.
  *
  * Pure, so the rule is unit-testable on the JVM: Chinese resolves to
- * the bundled family and Bold, English to the default family.
+ * the bundled family and Bold under Bauhaus, to the default family
+ * under Original; English to the default family either way.
  */
-fun lyricsFontSpec(text: String, isCurrent: Boolean): LyricsFontSpec =
+fun lyricsFontSpec(
+    text: String,
+    isCurrent: Boolean,
+    fontChoice: LyricsFontChoice = LyricsFontChoice.BAUHAUS,
+): LyricsFontSpec =
     if (isCjkLine(text)) {
-        LyricsFontSpec(ChineseLyricsFontFamily, FontWeight.Bold)
+        when (fontChoice) {
+            LyricsFontChoice.BAUHAUS ->
+                LyricsFontSpec(ChineseLyricsFontFamily, FontWeight.Bold)
+            LyricsFontChoice.ORIGINAL ->
+                LyricsFontSpec(
+                    FontFamily.Default,
+                    if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                )
+        }
     } else {
         LyricsFontSpec(
             FontFamily.Default,

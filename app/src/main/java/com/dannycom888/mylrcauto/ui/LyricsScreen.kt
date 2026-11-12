@@ -244,6 +244,7 @@ fun LyricsScreen(container: AppContainer) {
                     onSeek = { positionMs -> container.media.seekTo(positionMs) },
                     modifier = Modifier.weight(1f),
                     fontSizeSp = settings.lyricsFontSizeSp,
+                    lyricsFont = settings.lyricsFont,
                 )
                 Text(
                     text = document.sourceName,

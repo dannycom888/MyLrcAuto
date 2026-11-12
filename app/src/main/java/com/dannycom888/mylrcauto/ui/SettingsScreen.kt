@@ -47,6 +47,7 @@ import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.settings.AppLanguage
+import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import com.dannycom888.mylrcauto.settings.SettingsStore
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -91,13 +92,14 @@ private fun appVersionName(context: Context): String = runCatching {
 }.getOrNull() ?: ""
 
 /**
- * Settings: language switch at the top, lyrics size slider, keep-screen-on
- * switch, lyrics folder pick + rescan, about line.
+ * Settings: language switch at the top, lyrics size slider, lyrics font
+ * choice (original / Bauhaus), keep-screen-on switch, lyrics folder
+ * pick + rescan, about line.
  *
  * Picking a language calls [com.dannycom888.mylrcauto.settings.SettingsStore.setAppLanguage];
  * the activity recreates itself (see MainActivity) so the whole screen switches
- * language at once. The choice persists in SharedPreferences. The size and
- * keep-screen-on choices persist the same way, in the same store.
+ * language at once. The choice persists in SharedPreferences. The size, font
+ * and keep-screen-on choices persist the same way, in the same store.
  */
 @Composable
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
@@ -219,6 +221,44 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 SettingsStore.MIN_LYRICS_FONT_SIZE_SP - 1,
             modifier = Modifier.fillMaxWidth(),
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Lyrics font — two choices, same radio pattern as the language
+        // switch: 原来的 (the default font, as before v1.0.15) and
+        // Bauhaus (the user's uploaded font, bold Chinese lyrics).
+        // Default is Bauhaus, so nothing changes unless he switches.
+        // English lyrics keep the default font either way.
+        Text(
+            text = stringResource(R.string.settings_font_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 2.dp),
+        )
+        LyricsFontChoice.entries.forEach { choice ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { container.settings.setLyricsFont(choice) }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = settings.lyricsFont == choice,
+                    onClick = { container.settings.setLyricsFont(choice) },
+                )
+                Text(
+                    text = stringResource(
+                        when (choice) {
+                            LyricsFontChoice.ORIGINAL -> R.string.settings_font_original
+                            LyricsFontChoice.BAUHAUS -> R.string.settings_font_bauhaus
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 

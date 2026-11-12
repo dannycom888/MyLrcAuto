@@ -1,8 +1,13 @@
-# My LRC Auto 1.0.15
+# My LRC Auto 1.0.16
 
 Your own original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on your phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.16
+
+- **Lyrics font is now a choice (Settings → Lyrics font)**: two options — **Regular script** (the Bauhaus ITC font you supplied, Chinese lyrics bold) and **System default** (the original font, bold only for the line being sung, as before v1.0.15). **Default is Regular script**, so nothing changes unless you switch. English lyrics keep the default font either way. The choice applies to the car big-screen lyrics and the phone lyrics view at once; the dashboard card's subtitle is drawn by the car itself, so its font cannot change.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.15
 
@@ -98,7 +103,7 @@ gradle_build :app:testDebugUnitTest   # 128 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.15 (versionCode 17), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.16 (versionCode 18), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 
