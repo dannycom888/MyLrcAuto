@@ -6,6 +6,10 @@ import com.dannycom888.mylrcauto.lyrics.LocalFolderSource
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.lyrics.LyricsEngine
 import com.dannycom888.mylrcauto.media.MediaSessionRepository
+import com.dannycom888.mylrcauto.media.MirrorAction
+import com.dannycom888.mylrcauto.media.MirrorActivation
+import com.dannycom888.mylrcauto.media.MirrorActivationTracker
+import com.dannycom888.mylrcauto.media.MirrorServiceControl
 import com.dannycom888.mylrcauto.settings.SettingsStore
 import com.dannycom888.mylrcauto.util.AppLocale
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +53,11 @@ class MyLrcAutoApp : Application() {
          * process does.
          */
         val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+        private val appContext: Context = context.applicationContext
+
+        /** Whether the mirror media service is currently wanted running. */
+        private val mirrorActivation = MirrorActivationTracker()
 
         val settings: SettingsStore = SettingsStore(context)
 
@@ -104,6 +113,31 @@ class MyLrcAutoApp : Application() {
                     .map { it.track }
                     .distinctUntilChanged { old, new -> old?.key == new?.key }
                     .collect { track -> lyrics.setTrack(track) }
+            }
+
+            // The mirror media session (v1.0.13): the dashboard card is
+            // drawn from the active media session, and the car host only
+            // binds LyricsMediaService when the user selects it — but
+            // the user's flow is Poweramp selected, then tap the app,
+            // and tapping the app opens the CarAppService template, never
+            // the browser service, so in that flow the service never
+            // started and the card stayed Poweramp's. The app therefore
+            // starts its own service the moment a track is playing, and
+            // stops it when playback stops or there is no track — no
+            // picker selection needed. The tracker turns the snapshot
+            // stream into at most one start/stop per change, so the
+            // 500ms position ticker never re-starts a running service.
+            scope.launch {
+                media.snapshot
+                    .map { MirrorActivation.shouldBeActive(it) }
+                    .distinctUntilChanged()
+                    .collect { wantActive ->
+                        when (mirrorActivation.update(wantActive)) {
+                            MirrorAction.START -> MirrorServiceControl.start(appContext)
+                            MirrorAction.STOP -> MirrorServiceControl.stop(appContext)
+                            null -> Unit
+                        }
+                    }
             }
         }
     }

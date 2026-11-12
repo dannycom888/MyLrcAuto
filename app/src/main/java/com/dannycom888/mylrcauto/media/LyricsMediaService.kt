@@ -38,10 +38,14 @@ import kotlinx.coroutines.launch
  * Activation: the session is made active in [onCreate] and stays so
  * while this service lives; what the host shows is driven by the
  * published state — playing/paused with a track, [PlaybackState.STATE_NONE]
- * with no track. The host shows the session of the media source the user
- * selected in the car, so if the card still shows Poweramp, the user has
- * to pick My LRC Auto as the media source in the car's media picker
- * (only the car test can prove which tap that is on this host).
+ * with no track. The service is started by the app itself, not by the
+ * car host: the app starts it the moment a track is playing and stops
+ * it when playback stops or there is no track (see [MirrorActivation]
+ * and the AppContainer wiring), because the user's flow is Poweramp
+ * selected, then tap the app — and tapping the app opens the
+ * CarAppService template, never this service, so waiting for the host
+ * to bind it would leave the card on Poweramp's session forever.
+ * No picker selection is needed, and none is asked for.
  *
  * Updates: the render is driven by the snapshot, the lyrics state and
  * the permission flag — the same inputs the car screen reads. Metadata
