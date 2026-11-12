@@ -106,5 +106,25 @@
             </intent-filter>
         </service>
 
+        <!--
+          The mirror media session. The dashboard media card (split-screen,
+          map on the left) and the full-screen media view are drawn by the
+          car host from the *active media session* — never from a car-app
+          template. This service publishes a session that mirrors whatever
+          Poweramp is playing and carries the current lyric line in its
+          metadata, so the host draws the card the way it does for
+          AALyrics. It never plays audio itself; its transport buttons
+          forward to Poweramp. Exported because the car host (a different
+          process) has to bind it to read the session token.
+        -->
+        <service
+            android:name=".media.LyricsMediaService"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
     </application>
 </manifest>

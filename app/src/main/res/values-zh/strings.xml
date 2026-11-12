@@ -37,7 +37,7 @@
     <string name="settings_font_size_value">%1$d sp</string>
     <string name="settings_keep_screen_on_title">保持屏幕常亮</string>
     <string name="settings_keep_screen_on_summary">显示歌词时，屏幕不会自动熄灭。</string>
-    <string name="settings_about">My LRC Auto 1.0.11——只读本地歌词，不联网。</string>
+    <string name="settings_about">My LRC Auto 1.0.12——只读本地歌词，不联网。</string>
 
     <string name="car_silent">没有在放歌</string>
     <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>

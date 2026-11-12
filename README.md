@@ -1,8 +1,14 @@
-# My LRC Auto 1.0.11
+# My LRC Auto 1.0.12
 
 Your own original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on your phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.12
+
+- **Dashboard card, like AALyrics**: the split-screen card is the car's media card, not a template — the dashboard slot (map on the left) shows the active media session, and a template screen can never appear there, which is why the three-line card never showed in 1.0.9–1.0.11 despite the template fixes. This version adds a media session that mirrors Poweramp: it publishes the cover, title, artist, and the current lyric line (next line as the second line), so the dashboard card and the full-screen media view show one lyric line, progress, and transport, the way AALyrics does. The session never plays audio itself — its play/pause/skip buttons forward to Poweramp. If the card still shows Poweramp, pick My LRC Auto as the media source in the car's media picker. Only the car test can prove the card appears.
+- **App-icon full lyrics list unchanged**: opening the app icon still shows the whole song, scrolling with the highlight, on the big screen.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.11
 
@@ -63,11 +69,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 65 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 89 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.11 (versionCode 13), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.12 (versionCode 14), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 
