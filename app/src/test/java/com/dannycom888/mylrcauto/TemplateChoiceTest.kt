@@ -14,6 +14,13 @@ import org.junit.Test
  * that granted a surface without showing it reports an empty visible area.
  * Both must fall back to the three-line card, or the card never appears.
  *
+ * v1.0.11 adds the screen's own lifecycle: a covered screen (not STARTED)
+ * is in the dashboard / split-screen slot even when the host kept the
+ * surface live and wide, so it must fall back to the card too — the width
+ * and visible-area checks cannot catch a host that never takes the
+ * surface away. If the host keeps the screen STARTED in split-screen,
+ * this input cannot distinguish it; that is for the car to tell.
+ *
  * The visible area arrives as an android.graphics.Rect, which cannot run
  * on the JVM, so the screen maps it to a boolean before calling
  * [chooseTemplate] (null → false, empty rect → true) and the tests cover
@@ -30,6 +37,7 @@ class TemplateChoiceTest {
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
+                screenStarted = true,
             ),
         )
     }
@@ -45,6 +53,7 @@ class TemplateChoiceTest {
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = 400f,
                 visibleAreaEmpty = false,
+                screenStarted = true,
             ),
         )
     }
@@ -59,6 +68,7 @@ class TemplateChoiceTest {
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = true,
+                screenStarted = true,
             ),
         )
     }
@@ -73,6 +83,7 @@ class TemplateChoiceTest {
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
+                screenStarted = true,
             ),
         )
     }
@@ -88,6 +99,7 @@ class TemplateChoiceTest {
                 apiLevel = CarAppApiLevels.LEVEL_5,
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
+                screenStarted = true,
             ),
         )
     }
@@ -101,6 +113,7 @@ class TemplateChoiceTest {
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = null,
                 visibleAreaEmpty = false,
+                screenStarted = true,
             ),
         )
     }
@@ -114,6 +127,39 @@ class TemplateChoiceTest {
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = SPLIT_SCREEN_WIDTH_DP,
                 visibleAreaEmpty = false,
+                screenStarted = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `covered screen falls back even with a live wide surface`() {
+        // v1.0.11: the host kept the surface live and wide in
+        // split-screen, so width and visible area cannot catch it — but
+        // a covered screen is not the full-screen foreground app, and
+        // the slot shows the three-line card, not the surface layout.
+        assertEquals(
+            TemplateChoice.FALLBACK,
+            chooseTemplate(
+                surfaceLive = true,
+                apiLevel = CarAppApiLevels.LEVEL_7,
+                surfaceWidthDp = 1024f,
+                visibleAreaEmpty = false,
+                screenStarted = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `started screen with a live wide surface shows the surface template`() {
+        assertEquals(
+            TemplateChoice.ON_SURFACE,
+            chooseTemplate(
+                surfaceLive = true,
+                apiLevel = CarAppApiLevels.LEVEL_7,
+                surfaceWidthDp = 1024f,
+                visibleAreaEmpty = false,
+                screenStarted = true,
             ),
         )
     }

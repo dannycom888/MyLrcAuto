@@ -1,10 +1,13 @@
-# My LRC Auto 1.0.10
+# My LRC Auto 1.0.11
 
 Your own original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on your phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
 
-## What's new in 1.0.10
+## What's new in 1.0.11
+
+- **Split-screen three-line card, second attempt**: with 1.0.10 installed, full-screen works fine (lyrics show, plays normally — the "no lyrics" message is only a brief flash before the big screen appears), but the three-line card still never appears in the split-screen slot. Two changes: (1) the screen now also watches the playing track, the lyrics result and the permission flag directly, and refreshes the moment any of them changes — the foreground-only timer could leave the slot showing a stale template; (2) the screen's own lifecycle is now a template-choice input — a covered screen falls back to the three-line card even when the host kept the surface live and wide, which the width and visible-area checks cannot catch. One unknown remains: if this car keeps the screen in the foreground even in split-screen, the lifecycle input cannot tell the slot apart — the car test will tell.
+- **Icon v22**: the car's smile is bolder (about 2× thicker), moved up closer to the eyes, and now glows like the M-note. Everything else is unchanged (v21 composition, deep-blue background #051E3C).
 
 - **Split-screen three-line card, fixed**: the car kept showing the full-screen layout in the dashboard slot and never swapped to the three-line card. The screen now invalidates the moment the surface comes or goes (instead of waiting for the next lyric line), and it checks the granted surface width — a live surface narrower than 600dp is a split-screen slot, so the three-line card (previous / current / next) shows there. An empty visible area also falls back to the card.
 - **More room for the lyrics**: the cover column on the left of the full-screen lyrics is narrower (140dp cover in a 172dp column, down from 180dp / 212dp), so the lyrics list gets ~40dp more width. The top-left box in full-screen no longer carries the "My LRC Auto" title strip — an attempt to narrow the box the car draws, since its position and width are decided by the car system and the app cannot move it. Putting the cover below that box was checked and is not possible on this car: the area under the box is host-reserved template space, not the app's surface — the visible area starts to the right of the box, so the cover stays in the column beside the lyrics. No blur anywhere: the cover is drawn sharp, as before.
@@ -64,7 +67,7 @@ gradle_build :app:testDebugUnitTest   # 65 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.10 (versionCode 12), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.11 (versionCode 13), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 

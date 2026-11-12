@@ -46,6 +46,17 @@ internal const val SPLIT_SCREEN_WIDTH_DP = 600f
  *   host has not reported an area yet (null), which is treated as "all
  *   visible": a first frame drawn edge to edge and corrected a moment
  *   later is better than one that is not drawn.
+ * - [screenStarted]: the screen's own lifecycle is at least STARTED —
+ *   the app is the full-screen foreground app. When the screen is not
+ *   started (covered — the dashboard / split-screen slot on this car),
+ *   the host is showing the app in a corner even if it kept the surface
+ *   live and wide, so the three-line card is the answer and the surface
+ *   template is not. This is the input that catches the case the width
+ *   and visible-area checks cannot: a host that never takes the surface
+ *   away in split-screen. Flicker risk during transitions is small: the
+ *   screen flips STARTED/STOPPED exactly when the host moves the app
+ *   between full-screen and the slot, which is when the template should
+ *   change anyway, and the tick loop's redraw gap dampens rapid swaps.
  *
  * The visible area arrives as an android.graphics.Rect, which cannot run
  * on the JVM, so the screen maps it to this boolean before calling here
@@ -56,7 +67,9 @@ internal fun chooseTemplate(
     apiLevel: Int,
     surfaceWidthDp: Float?,
     visibleAreaEmpty: Boolean,
+    screenStarted: Boolean,
 ): TemplateChoice {
+    if (!screenStarted) return TemplateChoice.FALLBACK
     if (!surfaceLive) return TemplateChoice.FALLBACK
     if (apiLevel < CarAppApiLevels.LEVEL_7) return TemplateChoice.FALLBACK
     if (visibleAreaEmpty) return TemplateChoice.FALLBACK

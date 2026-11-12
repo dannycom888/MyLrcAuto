@@ -21,6 +21,7 @@ import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.media.Transport
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -41,6 +42,13 @@ import kotlinx.coroutines.launch
  * song is once a line: a few times a minute. That matters because template
  * updates are throttled by the host, and an app that invalidates on a timer
  * rather than on a change gets throttled for nothing.
+ *
+ * The tick loop only runs while the screen is STARTED, though, and in
+ * split-screen / dashboard this host drops the screen to STOPPED — so a
+ * second, state-driven collector (see init) watches the media snapshot,
+ * the lyrics state and the permission flag directly, and recomputes on
+ * exactly the events the tick loop misses when stopped: a track change,
+ * a lookup finishing, play/pause.
  */
 class CarLyricsScreen(
     carContext: CarContext,
@@ -58,7 +66,7 @@ class CarLyricsScreen(
      */
     private var lookingSinceMs: Long? = null
 
-    private data class Content(
+    internal data class Content(
         val glance: CarGlance,
         val title: String,
         val artist: String,
@@ -86,6 +94,38 @@ class CarLyricsScreen(
         // fires even while the screen is covered.
         lifecycleScope.launch {
             surface.live.collect { invalidate() }
+        }
+        lifecycleScope.launch {
+            // State-driven recompute — NOT gated on STARTED, like the
+            // liveness collector above. The tick loop below only runs
+            // while the screen is STARTED, and in split-screen /
+            // dashboard this host drops the screen to STOPPED: then no
+            // track change and no lookup finishing ever reaches
+            // compose(), and the template in the slot goes stale — it
+            // keeps showing whatever it showed when the app left
+            // full-screen, instead of following the song. The media
+            // snapshot, the lyrics state and the permission flag are
+            // StateFlows, so collecting them here fires on exactly the
+            // events the tick loop misses: a new track, a lookup
+            // finishing, a permission change, play/pause. The snapshot
+            // also ticks every 500ms while playing (the repository's
+            // position ticker), so this collector fires at the same rate
+            // as the tick loop — the `next != shown` comparison is the
+            // guard that keeps a position-only advance from
+            // invalidating. No MIN_REDRAW_GAP_MS here: state emissions
+            // are rare (a track change, a lookup finishing), and one of
+            // those must not wait a second behind a timer.
+            combine(
+                container.media.snapshot,
+                container.lyrics.state,
+                container.media.permissionGranted,
+            ) { _, _, _ -> }
+                .collect {
+                    val next = runCatching { compose() }.onFailure {
+                        Log.w(TAG, "state-driven compose failed, keeping the last template", it)
+                    }.getOrNull() ?: return@collect
+                    if (shouldInvalidateOnStateChange(next, shown)) invalidate()
+                }
         }
         lifecycleScope.launch {
             // STARTED rather than CREATED: a screen with another pushed over
@@ -160,13 +200,17 @@ class CarLyricsScreen(
             // Which template shows the lyrics is one decision, made in one
             // place (chooseTemplate) so it can be unit-tested: a live
             // surface alone is not enough — it also has to be wide enough
-            // to be a full screen rather than a split-screen slot, and the
-            // host has to actually be showing it.
+            // to be a full screen rather than a split-screen slot, the
+            // host has to actually be showing it, and the screen itself
+            // has to be STARTED (the full-screen foreground app) — a
+            // covered screen in the dashboard slot falls back to the
+            // three-line card even if the host kept the surface live.
             onSurface = chooseTemplate(
                 surfaceLive = surface.live.value,
                 apiLevel = carContext.carAppApiLevel,
                 surfaceWidthDp = surface.surfaceWidthDp.value,
                 visibleAreaEmpty = surface.visibleArea.value?.isEmpty == true,
+                screenStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
             ) == TemplateChoice.ON_SURFACE,
         )
     }
@@ -380,3 +424,17 @@ internal fun carTransportFor(transport: Transport): List<CarTransport> = buildLi
     if (transport.playPause) add(CarTransport.PLAY_PAUSE)
     if (transport.skipNext) add(CarTransport.NEXT)
 }
+
+/**
+ * The state-driven collector's rule, extracted so it is unit-testable:
+ * invalidate exactly when the recomposed content differs from what the
+ * host is showing — including the first compose (shown == null), a
+ * lookup finishing (None → Now), a track change, or play/pause — and
+ * never on a position-only advance, which composes to identical content
+ * (the 500ms snapshot ticker fires while playing, so this comparison is
+ * the guard that keeps the collector from spamming invalidates).
+ */
+internal fun shouldInvalidateOnStateChange(
+    next: CarLyricsScreen.Content,
+    shown: CarLyricsScreen.Content?,
+): Boolean = next != shown
