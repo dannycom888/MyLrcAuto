@@ -1,7 +1,9 @@
 package com.dannycom888.mylrcauto.ui
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,11 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.Context
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.settings.AppLanguage
-import com.dannycom888.mylrcauto.settings.BackgroundStyle
 import com.dannycom888.mylrcauto.settings.SettingsStore
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -74,14 +78,17 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
     },
 )
 
-/** Background choice → its label string. */
-@Composable
-private fun backgroundLabel(style: BackgroundStyle): String = stringResource(
-    when (style) {
-        BackgroundStyle.COVER -> R.string.settings_background_cover
-        BackgroundStyle.BLACK -> R.string.settings_background_black
-    },
-)
+/** The app's own versionName, read from the package so it updates every release. */
+private fun appVersionName(context: Context): String = runCatching {
+    val pm = context.packageManager
+    val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        @Suppress("DEPRECATION")
+        pm.getPackageInfo(context.packageName, 0)
+    }
+    info.versionName
+}.getOrNull() ?: ""
 
 /**
  * Settings: language switch at the top, lyrics size slider, keep-screen-on
@@ -122,9 +129,13 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             ?: raw
     }
 
+    // Scrollable: the list of sections is taller than a phone screen, so
+    // without this the bottom rows (folder, version) are cut off with no
+    // way to reach them — that is why the version was invisible.
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
     ) {
         // Top bar with back.
@@ -153,14 +164,14 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             text = stringResource(R.string.settings_language_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+            modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
         )
         AppLanguage.entries.forEach { language ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { container.settings.setAppLanguage(language) }
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(
@@ -175,7 +186,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Lyrics size — one slider for the phone and the car: the same
         // LyricsView draws both, so the setting sizes both at once. 14–32 sp
@@ -209,68 +220,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Background — the big screen's backdrop, behind the lyrics. Cover
-        // draws the current track's cover, blurred; All black is plain
-        // black (the default — the user likes it, and the glowing current
-        // line stands out most on it). The blur slider only applies to
-        // Cover, so it is disabled while All black is picked; the value
-        // itself is still kept, so switching back restores it.
-        Text(
-            text = stringResource(R.string.settings_background_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 4.dp),
-        )
-        BackgroundStyle.entries.forEach { style ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { container.settings.setBackgroundStyle(style) }
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = settings.backgroundStyle == style,
-                    onClick = { container.settings.setBackgroundStyle(style) },
-                )
-                Text(
-                    text = backgroundLabel(style),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.settings_background_blur_title),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = stringResource(
-                    R.string.settings_background_blur_value,
-                    settings.coverBlurPx,
-                ),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        }
-        Slider(
-            value = settings.coverBlurPx.toFloat(),
-            onValueChange = { container.settings.setCoverBlurPx(it.roundToInt()) },
-            valueRange = SettingsStore.MIN_COVER_BLUR_PX.toFloat()
-                ..SettingsStore.MAX_COVER_BLUR_PX.toFloat(),
-            steps = SettingsStore.MAX_COVER_BLUR_PX -
-                SettingsStore.MIN_COVER_BLUR_PX - 1,
-            enabled = settings.backgroundStyle == BackgroundStyle.COVER,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Keep screen on — the phone screen holds the window flag while
         // lyrics are showing; leaving the lyrics screen drops it.
@@ -278,7 +228,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { container.settings.setKeepScreenOn(!settings.keepScreenOn) }
-                .padding(vertical = 6.dp),
+                .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -298,7 +248,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Lyrics folder.
         Text(
@@ -310,7 +260,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             text = folderName ?: stringResource(R.string.settings_folder_none),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -360,8 +310,16 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        // Version, read from the package so it updates every release —
+        // and the about line below it. Both sit at the bottom of a
+        // scrollable list, so they are always reachable.
+        Spacer(modifier = Modifier.height(24.dp))
 
+        Text(
+            text = stringResource(R.string.settings_version, appVersionName(context)),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             text = stringResource(R.string.settings_about),
             fontSize = 12.sp,

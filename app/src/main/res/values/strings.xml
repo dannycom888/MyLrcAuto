@@ -39,12 +39,8 @@
     <string name="settings_font_size_value">%1$d sp</string>
     <string name="settings_keep_screen_on_title">Keep screen on</string>
     <string name="settings_keep_screen_on_summary">The screen stays on while lyrics are showing.</string>
-    <string name="settings_background_title">Background</string>
-    <string name="settings_background_cover">Cover</string>
-    <string name="settings_background_black">All black</string>
-    <string name="settings_background_blur_title">Cover blur</string>
-    <string name="settings_background_blur_value">%1$d px</string>
-    <string name="settings_about">My LRC Auto 1.0.14 — local lyrics only, no network.</string>
+    <string name="settings_about">My LRC Auto — local lyrics only, no network.</string>
+    <string name="settings_version">Version %1$s</string>
 
     <string name="car_silent">Nothing playing</string>
     <string name="car_silent_body">Start a song in Poweramp and the words will show here.</string>

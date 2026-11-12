@@ -107,6 +107,65 @@ data class MirrorPlayback(
 )
 
 /**
+ * The narrow surface the mirror needs to publish its state, so the
+ * publish step is unit-testable without an Android runtime. The real
+ * sink is the framework `MediaSession` ([LyricsMediaService]); a test
+ * uses a recording fake. The values are the pure mirror types plus the
+ * actions bitmask — no framework `PlaybackState` / `MediaMetadata` is
+ * built here, so a plain JVM test can drive the whole publish path.
+ */
+internal interface MirrorStateSink {
+    fun setPlaybackState(
+        state: MirrorPlaybackState,
+        positionMs: Long,
+        speed: Float,
+        actions: Long,
+    )
+
+    fun setMetadata(metadata: MirrorMetadata?)
+}
+
+/**
+ * Publishes the mirror state for this snapshot and glance: metadata
+ * when its signature changed, playback state on every call. Returns the
+ * new metadata signature, for the caller to remember.
+ *
+ * This is the actual publish step the service runs — not just the
+ * bitmask — so a test can assert the skip actions really reach the
+ * session. v1.0.14's card still showed 10s rewind/fast-forward on the
+ * real car even though the bitmask was right and `render` called
+ * `setPlaybackState` on every tick: the session went active in
+ * `onCreate` before the first (async) render published any state, so
+ * the host's dashboard card locked in its buttons from that first,
+ * empty read and never re-derived them. The fix is to publish a
+ * complete state — with the skip actions — synchronously, before the
+ * session goes active (see [LyricsMediaService]), and this function is
+ * the single publish path both the initial publish and the render loop
+ * use.
+ */
+internal fun publishMirrorState(
+    sink: MirrorStateSink,
+    snapshot: PlayerSnapshot,
+    glance: CarGlance,
+    lastSignature: MirrorMetadataSignature?,
+    nowElapsed: Long = SystemClock.elapsedRealtime(),
+): MirrorMetadataSignature? {
+    val metadata = mirrorMetadata(snapshot, glance)
+    val signature = metadata?.signature()
+    if (signature != lastSignature) {
+        sink.setMetadata(metadata)
+    }
+    val playback = mirrorPlayback(snapshot, nowElapsed)
+    sink.setPlaybackState(
+        playback.state,
+        playback.positionMs,
+        playback.speed,
+        playback.actions.toFramework(),
+    )
+    return signature
+}
+
+/**
  * The metadata to publish for this snapshot and glance, or null when
  * there is no track (the session then publishes no metadata at all).
  *

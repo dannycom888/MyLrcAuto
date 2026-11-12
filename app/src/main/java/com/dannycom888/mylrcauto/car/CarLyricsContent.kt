@@ -1,6 +1,5 @@
 package com.dannycom888.mylrcauto.car
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -19,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,11 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LyricsState
-import com.dannycom888.mylrcauto.settings.BackgroundStyle
 import com.dannycom888.mylrcauto.ui.LyricsView
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 /**
  * The lyrics screen, drawn on the car's own surface.
@@ -155,65 +150,20 @@ fun CarLyricsContent(
         density = density,
     )
 
-    // Background, computed once per cover: the blurred cover (dimmed, under
-    // a black scrim) for the Cover style, plain black for All black, and
-    // the old dark colour when Cover is picked but there is no cover yet.
-    // LaunchedEffect (not produceState) so a track change keeps the
-    // previous backdrop until the new one is ready instead of flashing
-    // dark. The blur runs off the main thread and is keyed on the cover
-    // bitmap itself, so the 500 ms playhead ticker — which keeps the same
-    // artwork reference — never re-runs it. A failure is a null backdrop
-    // and the dark fallback, never a crash on the car surface.
+    // Background: always all black (the user asked for only black in
+    // v1.0.15 — the blurred-cover option and its slider are gone). The
+    // backdrop is the app's own surface only: the host-drawn pane
+    // (top-left box) is the car's UI and is never touched.
     val cover = snapshot.artwork?.takeUnless { it.isRecycled }
-    var coverBackdrop by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(cover, settings.backgroundStyle, settings.coverBlurPx) {
-        coverBackdrop = withContext(Dispatchers.Default) {
-            if (settings.backgroundStyle == BackgroundStyle.COVER && cover != null) {
-                runCatching { CoverBackground.blurCover(cover, settings.coverBlurPx) }.getOrNull()
-            } else {
-                null
-            }
-        }
-    }
-
-    // The backdrop is the app's own surface only: the host-drawn pane
-    // (top-left box) is the car's UI and is never touched. The scrim
-    // sits between the blurred cover and the content, so it dims the
-    // backdrop without touching the small sharp cover below the pane or
-    // the lyrics — the glowing current line keeps its colour exactly.
     Box(modifier.fillMaxSize()) {
-        // A delegated property cannot be smart-cast, so capture it first.
-        val backdrop = coverBackdrop
-        if (settings.backgroundStyle == BackgroundStyle.COVER && backdrop != null) {
-            Image(
-                bitmap = backdrop.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = CoverBackground.SCRIM_ALPHA)),
-            )
-        } else {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        if (settings.backgroundStyle == BackgroundStyle.BLACK) {
-                            Color.Black
-                        } else {
-                            // Cover picked but no cover (yet): the old dark
-                            // colour, never white.
-                            Color(0xFF101820)
-                        },
-                    ),
-            )
-        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        )
         // The small cover below the pane, in the pane column: the sharp
         // cover (or the M-note icon when the player publishes none),
-        // shrunk to 120dp. The title and artist stay in the pane itself,
+        // 240dp. The title and artist stay in the pane itself,
         // so they are not repeated here. Shown only while a track is
         // playing; without a visible area yet there is no column to put
         // it in, so it stays hidden.

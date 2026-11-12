@@ -22,7 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dannycom888.mylrcauto.R
@@ -143,6 +142,11 @@ fun LyricsView(
         ) {
             itemsIndexed(document.lines, key = { index, _ -> index }) { index, line ->
                 val isCurrent = index == currentIndex
+                // Chinese lines draw in the bundled Bauhaus font, bold;
+                // English lines keep the default font, unchanged. The
+                // glowing current line keeps its colour and size either
+                // way — only the font and weight change here.
+                val fontSpec = lyricsFontSpec(line.text, isCurrent)
                 Text(
                     text = line.text,
                     modifier = Modifier
@@ -151,7 +155,8 @@ fun LyricsView(
                         .padding(horizontal = 20.dp, vertical = 10.dp),
                     fontSize = if (isCurrent) LyricsTextSize.currentSizeSp(fontSizeSp).sp else fontSizeSp.sp,
                     lineHeight = if (isCurrent) LyricsTextSize.currentLineHeightSp(fontSizeSp).sp else LyricsTextSize.lineHeightSp(fontSizeSp).sp,
-                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                    fontFamily = fontSpec.fontFamily,
+                    fontWeight = fontSpec.fontWeight,
                     color = if (isCurrent) {
                         MaterialTheme.colorScheme.secondary
                     } else {

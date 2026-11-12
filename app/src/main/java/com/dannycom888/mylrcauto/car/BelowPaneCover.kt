@@ -66,8 +66,8 @@ fun belowPaneCoverPlacement(
     )
 }
 
-/** The small cover's size: shrunk from the 140dp column cover. */
-const val BELOW_PANE_COVER_SIZE_DP = 120f
+/** The small cover's size: 240dp, twice the 120dp of v1.0.14 (user asked for 2x). */
+const val BELOW_PANE_COVER_SIZE_DP = 240f
 
 /** Top offset from the surface top: clears the pane box (~100dp) with margin. */
 const val BELOW_PANE_TOP_DP = 200f

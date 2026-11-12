@@ -1,6 +1,5 @@
 package com.dannycom888.mylrcauto
 
-import com.dannycom888.mylrcauto.settings.BackgroundStyle
 import com.dannycom888.mylrcauto.settings.SettingsStore
 import com.dannycom888.mylrcauto.ui.LyricsTextSize
 import org.junit.Assert.assertEquals
@@ -49,31 +48,5 @@ class SettingsTest {
         assertEquals(37, LyricsTextSize.currentSizeSp(32))
         assertEquals(45, LyricsTextSize.currentLineHeightSp(32))
         assertEquals(39, LyricsTextSize.lineHeightSp(32))
-    }
-
-    @Test
-    fun blurRangeIs0To25Default12() {
-        assertEquals(0, SettingsStore.MIN_COVER_BLUR_PX)
-        assertEquals(25, SettingsStore.MAX_COVER_BLUR_PX)
-        assertEquals(12, SettingsStore.DEFAULT_COVER_BLUR_PX)
-    }
-
-    @Test
-    fun blurCoercionClampsOutOfRange() {
-        assertEquals(0, SettingsStore.coerceCoverBlurPx(-5))
-        assertEquals(0, SettingsStore.coerceCoverBlurPx(0))
-        assertEquals(12, SettingsStore.coerceCoverBlurPx(12))
-        assertEquals(25, SettingsStore.coerceCoverBlurPx(25))
-        assertEquals(25, SettingsStore.coerceCoverBlurPx(100))
-    }
-
-    @Test
-    fun backgroundStyleDefaultsToBlackAndUnknownNamesFallBack() {
-        // The user likes all-black, so a fresh install — and any stored
-        // name an older build does not know — is BLACK, never a crash.
-        assertEquals(BackgroundStyle.BLACK, BackgroundStyle.fromName(null))
-        assertEquals(BackgroundStyle.BLACK, BackgroundStyle.fromName("NOPE"))
-        assertEquals(BackgroundStyle.COVER, BackgroundStyle.fromName("COVER"))
-        assertEquals(BackgroundStyle.BLACK, BackgroundStyle.fromName("BLACK"))
     }
 }

@@ -1,8 +1,17 @@
-# My LRC Auto 1.0.14
+# My LRC Auto 1.0.15
 
 Your own original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on your phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.15
+
+- **Card buttons are previous / next track — for real this time**: 1.0.14 already published skip actions, but the card still showed the 10s buttons. The cause: the session was set active (`isActive = true`) in `onCreate` before the first playback state was ever published — the first publish only happened later, when the async combine flow emitted. The car host read the session's actions right at activation, got an empty set, and locked the card's button layout to the 10s fallback; later publishes never made it re-derive the buttons. (The car screen's own media bar showed prev/next at the same moment, so the two host UIs disagreed about the same session.) This version publishes a full playback state — with skip-to-previous / skip-to-next, no rewind/fast-forward — synchronously from the current snapshot in `onCreate`, **before** setting the session active, and every later update goes through the same single publish path. Pause/play is unchanged. A test now drives the real publish path and asserts the live session's actions include skip and exclude rewind/fast-forward.
+- **Chinese lyrics font**: Chinese lines now draw in Bauhaus ITC (the font you supplied), **bold**; English lines keep the current font, unchanged. The font is bundled in the APK, which is why the APK is now about 19 MB instead of 9 MB. It applies to the app's own surfaces — the car big-screen lyrics and the phone lyrics view — with the glowing current-line highlight and the lyrics-size setting working as before. The dashboard card's subtitle is drawn by the car itself, so its font cannot change.
+- **Cover twice as big**: the cover below the top-left pane is now 240dp (was 120dp), still sharp, still with the lyrics full width and the rest of the screen black.
+- **Background is always all black**: the background choice and the blur slider are gone from Settings, and the now-dead blur computation code is removed. The big screen's background is always black.
+- **Settings shows the version**: the bottom of Settings now shows "Version 1.0.15" (read from the app package, so it updates itself every release). The Settings list is also scrollable now — the rows below the fold were unreachable before — and the rows are tighter, with less empty space between items.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.14
 
@@ -67,7 +76,7 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 - Lyrics come only from a folder you pick (SAF, picked once, scanned recursively), matched by the audio file's identical filename stem (Poweramp's pairing rule); multi-artist split + title matching as fallback; UTF-8 with GBK fallback
 - The file index is pre-built once at startup (1092 `.lrc` files in one pass), never scanned lazily during playback
 - Phone: full lyrics list, current line highlighted and auto-followed, tap a line to seek
-- Car: full lyrics on the head unit (MapWithContentTemplate + its own surface), with previous / play-pause / next; in full-screen the cover sits in a column on the left of the lyrics list (M-note icon when there is none)
+- Car: full lyrics on the head unit (MapWithContentTemplate + its own surface), with previous / play-pause / next; in full-screen the cover sits below the top-left pane (M-note icon when there is none)
 - Chinese UI, with an in-app language switch at the top of Settings (follow system / 中文（简体）/ English), effective immediately
 - Lyrics size (14–32 sp) and keep-screen-on can be set in Settings; both persist across restarts
 - Icon: deep blue (#051E3C), white M-shaped note above a glowing white car, the note slightly left of the car's centre; the car has round headlights and a smile
@@ -85,11 +94,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 89 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 128 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.13 (versionCode 15), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.15 (versionCode 17), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 

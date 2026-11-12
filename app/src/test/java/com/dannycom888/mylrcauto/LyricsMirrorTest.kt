@@ -2,7 +2,9 @@ package com.dannycom888.mylrcauto
 
 import android.media.session.PlaybackState
 import com.dannycom888.mylrcauto.car.CarGlance
+import com.dannycom888.mylrcauto.media.MirrorMetadata
 import com.dannycom888.mylrcauto.media.MirrorPlaybackState
+import com.dannycom888.mylrcauto.media.MirrorStateSink
 import com.dannycom888.mylrcauto.media.MirrorTransportActions
 import com.dannycom888.mylrcauto.media.PlayerSnapshot
 import com.dannycom888.mylrcauto.media.PlaybackPosition
@@ -10,6 +12,7 @@ import com.dannycom888.mylrcauto.media.TrackInfo
 import com.dannycom888.mylrcauto.media.Transport
 import com.dannycom888.mylrcauto.media.mirrorMetadata
 import com.dannycom888.mylrcauto.media.mirrorPlayback
+import com.dannycom888.mylrcauto.media.publishMirrorState
 import com.dannycom888.mylrcauto.media.signature
 import com.dannycom888.mylrcauto.media.toFramework
 import org.junit.Assert.assertEquals
@@ -274,5 +277,85 @@ class LyricsMirrorTest {
         assertTrue(actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
         assertTrue(actions and PlaybackState.ACTION_REWIND == 0L)
         assertTrue(actions and PlaybackState.ACTION_FAST_FORWARD == 0L)
+    }
+
+    @Test
+    fun publishSendsSkipActionsToTheSession() {
+        // The bitmask test above only proves the flags are right on a
+        // builder object. This one drives the actual publish step the
+        // service runs — publishMirrorState into a recording sink — and
+        // asserts the skip actions really reach the session, with no
+        // rewind/fast-forward. v1.0.14 had the right bitmask and called
+        // setPlaybackState on every render, yet the car still showed
+        // 10s buttons, because the session went active before the
+        // first (async) render published any state; the fix publishes
+        // synchronously before activation through this same function,
+        // so this test pins the publish path, not just the flags.
+        val sink = RecordingSink()
+        val signature = publishMirrorState(
+            sink,
+            playingSnapshot(
+                transport = Transport(
+                    playPause = true,
+                    skipPrevious = false,
+                    skipNext = false,
+                    seek = true,
+                ),
+            ),
+            now,
+            null,
+            nowElapsed = 1_000L,
+        )
+        assertEquals(1, sink.playbackStates.size)
+        val actions = sink.playbackStates.single().actions
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+        assertTrue(actions and PlaybackState.ACTION_REWIND == 0L)
+        assertTrue(actions and PlaybackState.ACTION_FAST_FORWARD == 0L)
+        // Metadata goes out too, on the first publish.
+        assertEquals(1, sink.metadata.size)
+        assertEquals("缠绕千年的寂寞", sink.metadata.single()?.subtitle)
+        // And the returned signature is the published metadata's.
+        assertEquals(sink.metadata.single()?.signature(), signature)
+    }
+
+    @Test
+    fun publishSkipsMetadataWhenSignatureUnchanged() {
+        // Playback state is re-sent on every call, but metadata only
+        // when its signature changed — the subtitle must never be
+        // spammed while the line stays the same.
+        val sink = RecordingSink()
+        val snapshot = playingSnapshot()
+        val first = publishMirrorState(sink, snapshot, now, null, nowElapsed = 1_000L)
+        val second = publishMirrorState(sink, snapshot, now, first, nowElapsed = 1_000L)
+        assertEquals(2, sink.playbackStates.size)
+        assertEquals(1, sink.metadata.size)
+        assertEquals(first, second)
+    }
+
+    /** Records what publishMirrorState sends, in call order. */
+    private class RecordingSink : MirrorStateSink {
+        data class PublishedPlayback(
+            val state: MirrorPlaybackState,
+            val positionMs: Long,
+            val speed: Float,
+            val actions: Long,
+        )
+
+        val playbackStates = mutableListOf<PublishedPlayback>()
+        val metadata = mutableListOf<MirrorMetadata?>()
+
+        override fun setPlaybackState(
+            state: MirrorPlaybackState,
+            positionMs: Long,
+            speed: Float,
+            actions: Long,
+        ) {
+            playbackStates.add(PublishedPlayback(state, positionMs, speed, actions))
+        }
+
+        override fun setMetadata(metadata: MirrorMetadata?) {
+            this.metadata.add(metadata)
+        }
     }
 }

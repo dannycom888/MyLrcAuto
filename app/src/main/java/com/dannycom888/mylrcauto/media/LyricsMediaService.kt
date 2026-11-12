@@ -99,9 +99,31 @@ class LyricsMediaService : MediaBrowserService() {
                     MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS,
             )
             setCallback(MirrorCallback(container.media))
-            isActive = true
         }
         sessionToken = mediaSession.sessionToken
+        // Publish a complete state — with the skip actions — BEFORE the
+        // session goes active. The host reads the session's actions the
+        // moment it becomes active, and the dashboard card locks in its
+        // buttons from that first read; in v1.0.14 the session went
+        // active here with no playback state yet (the first render is
+        // async), so the card saw no skip actions, fell back to 10s
+        // rewind/fast-forward, and never re-derived the buttons even
+        // though every later render published skip. The current snapshot
+        // is read synchronously, so this first publish is already the
+        // live track's state.
+        val sink = MediaSessionSink(mediaSession)
+        lastSignature = publishMirrorState(
+            sink,
+            container.media.snapshot.value,
+            CarGlance.of(
+                state = container.lyrics.state.value,
+                hasTrack = container.media.snapshot.value.hasTrack,
+                permissionGranted = container.media.permissionGranted.value,
+                positionMs = container.media.snapshot.value.playback.currentMs(),
+            ),
+            lastSignature,
+        )
+        mediaSession.isActive = true
 
         scope.launch {
             combine(
@@ -174,19 +196,17 @@ class LyricsMediaService : MediaBrowserService() {
         lyricsState: LyricsState,
         permissionGranted: Boolean,
     ) {
-        val glance = CarGlance.of(
-            state = lyricsState,
-            hasTrack = snapshot.hasTrack,
-            permissionGranted = permissionGranted,
-            positionMs = snapshot.playback.currentMs(),
+        lastSignature = publishMirrorState(
+            MediaSessionSink(mediaSession),
+            snapshot,
+            CarGlance.of(
+                state = lyricsState,
+                hasTrack = snapshot.hasTrack,
+                permissionGranted = permissionGranted,
+                positionMs = snapshot.playback.currentMs(),
+            ),
+            lastSignature,
         )
-        val metadata = mirrorMetadata(snapshot, glance)
-        val signature = metadata?.signature()
-        if (signature != lastSignature) {
-            lastSignature = signature
-            mediaSession.setMetadata(metadata?.toFramework())
-        }
-        mediaSession.setPlaybackState(mirrorPlayback(snapshot).toFramework())
     }
 
     /**
@@ -250,20 +270,36 @@ private fun MirrorMetadata.toFramework(): MediaMetadata =
         description?.let { putString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, it) }
     }.build()
 
-/** Thin framework mapping for the pure mirror playback state. */
-private fun MirrorPlayback.toFramework(): PlaybackState =
-    PlaybackState.Builder()
-        .setState(
-            when (state) {
-                MirrorPlaybackState.PLAYING -> PlaybackState.STATE_PLAYING
-                MirrorPlaybackState.PAUSED -> PlaybackState.STATE_PAUSED
-                MirrorPlaybackState.NONE -> PlaybackState.STATE_NONE
-            },
-            positionMs,
-            speed,
+/** The real [MirrorStateSink]: the framework session behind it. */
+private class MediaSessionSink(
+    private val session: MediaSession,
+) : MirrorStateSink {
+    override fun setPlaybackState(
+        state: MirrorPlaybackState,
+        positionMs: Long,
+        speed: Float,
+        actions: Long,
+    ) {
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(
+                    when (state) {
+                        MirrorPlaybackState.PLAYING -> PlaybackState.STATE_PLAYING
+                        MirrorPlaybackState.PAUSED -> PlaybackState.STATE_PAUSED
+                        MirrorPlaybackState.NONE -> PlaybackState.STATE_NONE
+                    },
+                    positionMs,
+                    speed,
+                )
+                .setActions(actions)
+                .build(),
         )
-        .setActions(actions.toFramework())
-        .build()
+    }
+
+    override fun setMetadata(metadata: MirrorMetadata?) {
+        session.setMetadata(metadata?.toFramework())
+    }
+}
 
 /**
  * The transport actions as a `PlaybackState` flags bitmask.

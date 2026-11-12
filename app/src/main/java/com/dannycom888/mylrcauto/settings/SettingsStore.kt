@@ -15,10 +15,6 @@ data class Settings(
     val lyricsFontSizeSp: Int = SettingsStore.DEFAULT_LYRICS_FONT_SIZE_SP,
     /** Keep the phone screen on while the lyrics screen is showing. */
     val keepScreenOn: Boolean = false,
-    /** The big screen's backdrop: the current cover, blurred, or all black. Default BLACK. */
-    val backgroundStyle: BackgroundStyle = BackgroundStyle.BLACK,
-    /** How blurred the cover backdrop is, in px at the downscaled blur size. */
-    val coverBlurPx: Int = SettingsStore.DEFAULT_COVER_BLUR_PX,
 )
 
 /**
@@ -50,10 +46,6 @@ class SettingsStore(context: Context) {
                 prefs.getInt(KEY_LYRICS_FONT_SIZE_SP, DEFAULT_LYRICS_FONT_SIZE_SP),
             ),
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
-            backgroundStyle = BackgroundStyle.fromName(prefs.getString(KEY_BACKGROUND_STYLE, null)),
-            coverBlurPx = coerceCoverBlurPx(
-                prefs.getInt(KEY_COVER_BLUR_PX, DEFAULT_COVER_BLUR_PX),
-            ),
         )
     }
 
@@ -79,26 +71,12 @@ class SettingsStore(context: Context) {
         _settings.value = current.copy(keepScreenOn = enabled)
     }
 
-    fun setBackgroundStyle(style: BackgroundStyle) {
-        prefs.edit().putString(KEY_BACKGROUND_STYLE, style.name).apply()
-        _settings.value = current.copy(backgroundStyle = style)
-    }
-
-    /** Out-of-range values (e.g. from an older build) are clamped, never stored raw. */
-    fun setCoverBlurPx(px: Int) {
-        val value = coerceCoverBlurPx(px)
-        prefs.edit().putInt(KEY_COVER_BLUR_PX, value).apply()
-        _settings.value = current.copy(coverBlurPx = value)
-    }
-
     companion object {
         const val PREFS_FILE = "mylrcauto-prefs"
         const val KEY_FOLDER_URI = "local_lyrics_folder_uri"
         const val KEY_APP_LANGUAGE = "app_language"
         const val KEY_LYRICS_FONT_SIZE_SP = "lyrics_font_size_sp"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
-        const val KEY_BACKGROUND_STYLE = "background_style"
-        const val KEY_COVER_BLUR_PX = "cover_blur_px"
 
         /** Lyrics size slider range: 14–32 sp, default 17 sp (the original hardcoded size). */
         const val MIN_LYRICS_FONT_SIZE_SP = 14
@@ -107,20 +85,5 @@ class SettingsStore(context: Context) {
 
         fun coerceLyricsFontSizeSp(sp: Int): Int =
             sp.coerceIn(MIN_LYRICS_FONT_SIZE_SP, MAX_LYRICS_FONT_SIZE_SP)
-
-        /**
-         * Cover-blur slider range: 0–25 px, default 12 px. The radius is
-         * in px at the downscaled blur size (the cover is shrunk to ≤ 48px
-         * before blurring), so 12 is already a soft wash and 25 is nearly
-         * a flat average colour; 0 is just the shrunken cover stretched,
-         * which is soft on its own. Default 12 looks like Melisma's car
-         * photos: clearly blurred, not sharp.
-         */
-        const val MIN_COVER_BLUR_PX = 0
-        const val MAX_COVER_BLUR_PX = 25
-        const val DEFAULT_COVER_BLUR_PX = 12
-
-        fun coerceCoverBlurPx(px: Int): Int =
-            px.coerceIn(MIN_COVER_BLUR_PX, MAX_COVER_BLUR_PX)
     }
 }
