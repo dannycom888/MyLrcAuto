@@ -60,16 +60,6 @@ sealed interface CarGlance {
     companion object {
 
         /**
-         * How long the car shows "looking for lyrics" before giving up and
-         * saying there are no lyrics instead. Both car paths — the fallback
-         * template ([CarLyricsScreen]) and the drawn surface
-         * ([CarLyricsContent]) — use this one value, so the driver gets
-         * words instead of a spinner after the same wait whichever path is
-         * showing.
-         */
-        const val LOOKING_TIMEOUT_MS = 30_000L
-
-        /**
          * @param positionMs the playhead, from the media snapshot — the car
          *   screen has to agree with the phone about where the song is.
          */

@@ -160,8 +160,18 @@ fun mirrorPlayback(
         speed = if (playback.isPlaying) playback.speed else 0f,
         actions = MirrorTransportActions(
             playPause = snapshot.transport.playPause,
-            skipPrevious = snapshot.transport.skipPrevious,
-            skipNext = snapshot.transport.skipNext,
+            // Previous/next track, always — never the 10s rewind /
+            // fast-forward the car shows instead. Poweramp supports
+            // track skipping through its transport controls (the
+            // repository calls skipToNext/skipToPrevious directly, and
+            // the mirror callback forwards them), but it does not
+            // advertise SKIP_TO_PREVIOUS / SKIP_TO_NEXT in its
+            // playback-state actions, so copying the advertised
+            // actions left the mirror with no skip buttons at all and
+            // the car fell back to 10s rewind/fast-forward. The card
+            // gets previous/next; seek still follows the transport.
+            skipPrevious = true,
+            skipNext = true,
             seek = snapshot.transport.seek,
         ),
     )

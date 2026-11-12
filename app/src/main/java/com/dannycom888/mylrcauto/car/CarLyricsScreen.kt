@@ -59,21 +59,12 @@ class CarLyricsScreen(
     /** What the host is currently showing, so a redraw can be skipped when nothing has changed. */
     private var shown: Content? = null
 
-    /**
-     * When the glance first became "looking for lyrics", or null when it is
-     * not looking. A fresh process has to walk the whole folder before the
-     * first lookup resolves, and the car must not spin on that forever.
-     */
-    private var lookingSinceMs: Long? = null
-
     internal data class Content(
         val glance: CarGlance,
         val title: String,
         val artist: String,
         val transport: Transport,
         val playing: Boolean,
-        /** The glance has been "looking" longer than [CarGlance.LOOKING_TIMEOUT_MS]. */
-        val lookingTimedOut: Boolean,
         /**
          * Whether the app is drawing itself on the car's surface.
          *
@@ -180,14 +171,6 @@ class CarLyricsScreen(
             permissionGranted = container.media.permissionGranted.value,
             positionMs = playback.currentMs(),
         )
-        lookingSinceMs = if (glance is CarGlance.Looking) {
-            lookingSinceMs ?: System.currentTimeMillis()
-        } else {
-            null
-        }
-        val lookingTimedOut = lookingSinceMs?.let {
-            System.currentTimeMillis() - it > CarGlance.LOOKING_TIMEOUT_MS
-        } ?: false
 
         return Content(
             glance = glance,
@@ -196,7 +179,6 @@ class CarLyricsScreen(
             artist = snapshot.track?.artist?.takeIf { it.isNotBlank() }.orEmpty(),
             transport = snapshot.transport,
             playing = playback.isPlaying,
-            lookingTimedOut = lookingTimedOut,
             // Which template shows the lyrics is one decision, made in one
             // place (chooseTemplate) so it can be unit-tested: a live
             // surface alone is not enough — it also has to be wide enough
@@ -271,17 +253,19 @@ class CarLyricsScreen(
 
     private fun Content.fallback(): Template = when (glance) {
         is CarGlance.Now -> lyrics(glance)
-        CarGlance.Looking -> if (lookingTimedOut) {
-            // The index walk is still running (or stuck): words, not an
-            // endless spinner, after 30 seconds. If the lyrics do arrive,
-            // the tick loop swaps this for the real screen.
-            message(R.string.car_none, R.string.car_none_body)
-        } else {
-            PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
-                .setTitle(title)
-                .setHeaderAction(Action.BACK)
-                .build()
-        }
+        // Still looking: the loading pane, for as long as it takes. The
+        // lookup used to give up after 30 seconds and say "no lyrics"
+        // instead — but the lookup was still running (a fresh process
+        // walks 1,092 .lrc files before the first one resolves), so the
+        // template flashed "no lyrics" and the lyrics arrived a moment
+        // later. "No lyrics" is only ever said for CarGlance.None,
+        // which the engine only emits after the lookup actually
+        // completed with no match — so for this user, whose songs all
+        // have a .lrc, it effectively never appears.
+        CarGlance.Looking -> PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
+            .setTitle(title)
+            .setHeaderAction(Action.BACK)
+            .build()
 
         CarGlance.Silent -> message(R.string.car_silent, R.string.car_silent_body)
         CarGlance.None -> message(R.string.car_none, R.string.car_none_body)

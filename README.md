@@ -1,8 +1,18 @@
-# My LRC Auto 1.0.13
+# My LRC Auto 1.0.14
 
 Your own original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on your phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.14
+
+- **Background setting (Settings → 背景)**: the big screen's background is now either the current track's cover, blurred (封面), or all black (全黑) — your choice. **Default is all black**, since you said you like it. The 封面 style has a 封面模糊 slider (0–25 px, default 12) to adjust how blurred the cover is. The blurred cover is computed once per cover change and cached, never re-blurred on the playhead tick, so it cannot jank the scrolling. With no cover art, the 封面 style falls back to the dark background — never blank or white. The glowing current-line highlight is unchanged, and the all-black default makes it stand out even more.
+- **Cover moved below the pane**: the small cover now sits below the top-left pane box and the rest of the screen is black — the earlier claim that the area below the pane is not drawable was wrong. The host grants the app the full surface (the visible area's left edge sits at about 60% of the surface width, so the surface does extend left of it, below the pane included), and Melisma's photos prove the host draws nothing below the pane. So the cover column beside the lyrics is gone; the lyrics now use the full width, and the cover (120dp, sharp) sits below the pane.
+- **Dashboard card, start fix**: 1.0.13 is installed and still showed no card until a phone restart, so the background start from the app container genuinely failed (blocked while the phone sat in the pocket). This version ALSO starts the mirror service from the car app itself — when the car session starts and when the main screen is created — because at that moment the app is the foreground car app and starting the service is allowed. If `startService` throws, it falls back to `startForegroundService` with a minimal silent notification. The app-container snapshot hook is kept. **The session now also stays active while a track is loaded but paused** (1.0.13 stopped it on pause, so the card fell back to Poweramp's the moment you paused — your 21:27 photo showed exactly that; your 21:30 photo confirmed the card IS My LRC Auto's while playing, showing the lyric line). The mirror never plays audio itself.
+- **"No lyrics" flash, gone**: the template used to flash "no lyrics" while the lookup was still running (a fresh process walks 1,092 .lrc files, and the 30s timeout demoted "looking" to "no lyrics" before the lyrics arrived). Now "no lyrics" only appears after the lookup has actually completed and found no match — while it is still looking, the loading pane shows. Since all your songs have a matching .lrc, it should effectively never appear.
+- **Lyrics scroll again**: the big-screen list had stopped following the song. The playhead was frozen, not the scroll logic: the 500ms tick state was recreated every time the lyrics loaded, while the ticker kept incrementing the old one, so the current line never advanced. Fixed — the tick is one stable state now, and the list follows the current line in real time from the start instead of sitting still for a minute and then jumping.
+- **Card buttons are previous / next track**: the dashboard card used to show 10s rewind / fast-forward buttons. Poweramp supports track skipping but does not advertise it, so the mirror published no skip actions and the car fell back to the 10s buttons. The mirror now always offers previous/next track (forwarded to Poweramp); pause/play is unchanged.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.13
 

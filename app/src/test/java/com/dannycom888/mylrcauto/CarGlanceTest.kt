@@ -87,4 +87,57 @@ class CarGlanceTest {
         assertEquals("four", now.next)
         assertTrue(now.instrumental)
     }
+
+    // The startup "no lyrics" flash (v1.0.14): the template and the
+    // surface used to give up after 30 seconds of looking and say there
+    // were no lyrics — while the lookup was still running (a fresh
+    // process walks 1,092 .lrc files before the first one resolves), so
+    // "no lyrics" flashed and the lyrics arrived a moment later. "No
+    // lyrics" is only ever the answer when the lookup actually
+    // completed with no match.
+    @Test
+    fun lookingNeverProducesNoLyrics() {
+        val glance = CarGlance.of(
+            state = LyricsState.Looking,
+            hasTrack = true,
+            permissionGranted = true,
+            positionMs = 0L,
+        )
+        assertEquals(CarGlance.Looking, glance)
+    }
+
+    @Test
+    fun noTrackYetNeverProducesNoLyrics() {
+        // Idle, or no track at all: still nothing looked up, so never
+        // "no lyrics" either.
+        assertEquals(
+            CarGlance.Silent,
+            CarGlance.of(
+                state = LyricsState.Idle,
+                hasTrack = true,
+                permissionGranted = true,
+                positionMs = 0L,
+            ),
+        )
+        assertEquals(
+            CarGlance.Silent,
+            CarGlance.of(
+                state = LyricsState.Looking,
+                hasTrack = false,
+                permissionGranted = true,
+                positionMs = 0L,
+            ),
+        )
+    }
+
+    @Test
+    fun onlyACompletedLookupWithNoMatchProducesNoLyrics() {
+        val glance = CarGlance.of(
+            state = LyricsState.None("No .lrc file in the folder matches this track"),
+            hasTrack = true,
+            permissionGranted = true,
+            positionMs = 0L,
+        )
+        assertEquals(CarGlance.None, glance)
+    }
 }

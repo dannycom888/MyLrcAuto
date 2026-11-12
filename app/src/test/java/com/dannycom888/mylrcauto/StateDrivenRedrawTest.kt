@@ -29,7 +29,6 @@ class StateDrivenRedrawTest {
         artist: String = "张国荣",
         transport: Transport = Transport(playPause = true, skipNext = true, skipPrevious = true),
         playing: Boolean = true,
-        lookingTimedOut: Boolean = false,
         onSurface: Boolean = false,
     ) = CarLyricsScreen.Content(
         glance = glance,
@@ -37,7 +36,6 @@ class StateDrivenRedrawTest {
         artist = artist,
         transport = transport,
         playing = playing,
-        lookingTimedOut = lookingTimedOut,
         onSurface = onSurface,
     )
 
@@ -110,16 +108,6 @@ class StateDrivenRedrawTest {
             shouldInvalidateOnStateChange(
                 next = content(onSurface = true),
                 shown = content(onSurface = false),
-            ),
-        )
-    }
-
-    @Test
-    fun `looking timing out invalidates`() {
-        assertTrue(
-            shouldInvalidateOnStateChange(
-                next = content(glance = CarGlance.Looking, lookingTimedOut = true),
-                shown = content(glance = CarGlance.Looking, lookingTimedOut = false),
             ),
         )
     }

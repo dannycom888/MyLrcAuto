@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator
+import com.dannycom888.mylrcauto.MyLrcAutoApp
+import com.dannycom888.mylrcauto.media.MirrorServiceControl
 import com.dannycom888.mylrcauto.util.AppLocale
 
 /**
@@ -33,7 +35,18 @@ class CarAppService : androidx.car.app.CarAppService() {
         super.attachBaseContext(AppLocale.wrap(base))
     }
 
-    override fun onCreateSession(): Session = CarSession()
+    override fun onCreateSession(): Session {
+        // The car app is the foreground app from here, so starting the
+        // mirror service is allowed — where the snapshot hook's
+        // background start may have been blocked (v1.0.13). The screen
+        // does the same when it is created; the two call sites cannot
+        // double-start a running service.
+        val app = applicationContext as MyLrcAutoApp
+        startMirrorFromCarApp(app.container.media.snapshot.value) {
+            MirrorServiceControl.start(applicationContext)
+        }
+        return CarSession()
+    }
 
     /**
      * Which hosts may drive this app.

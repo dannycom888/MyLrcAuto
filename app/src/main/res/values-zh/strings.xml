@@ -2,6 +2,8 @@
 <resources>
     <string name="app_name">My LRC Auto</string>
     <string name="notification_listener_label">My LRC Auto 通知监听</string>
+    <string name="mirror_notification_channel">歌词同步</string>
+    <string name="mirror_notification_text">正在把当前歌词同步到车机。</string>
 
     <string name="player_nothing_playing">没有在放歌</string>
     <string name="player_unknown_artist">未知歌手</string>
@@ -37,7 +39,12 @@
     <string name="settings_font_size_value">%1$d sp</string>
     <string name="settings_keep_screen_on_title">保持屏幕常亮</string>
     <string name="settings_keep_screen_on_summary">显示歌词时，屏幕不会自动熄灭。</string>
-    <string name="settings_about">My LRC Auto 1.0.13——只读本地歌词，不联网。</string>
+    <string name="settings_background_title">背景</string>
+    <string name="settings_background_cover">封面</string>
+    <string name="settings_background_black">全黑</string>
+    <string name="settings_background_blur_title">封面模糊</string>
+    <string name="settings_background_blur_value">%1$d px</string>
+    <string name="settings_about">My LRC Auto 1.0.14——只读本地歌词，不联网。</string>
 
     <string name="car_silent">没有在放歌</string>
     <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>

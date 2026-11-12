@@ -9,15 +9,12 @@ import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
@@ -109,18 +106,23 @@ class CarSurface(
                         modifier = androidx.compose.ui.Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,
                     ) {
-                        val area by state.visibleArea.collectAsStateWithLifecycle()
+                        // The content gets the surface itself, not a
+                        // pre-padded modifier: CarLyricsContent lays the
+                        // lyrics out inside the host's visible area, and
+                        // draws the background and the small cover below
+                        // the pane on the full surface — the surface is
+                        // bigger than the visible area (its left edge is
+                        // where the pane column ends), and the pane column
+                        // below the pane box is drawable (see
+                        // belowPaneCoverPlacement).
                         CarLyricsContent(
                             container = container,
                             positionMsProvider = positionMsProvider,
                             onSeek = onSeek,
-                            // Inside the host's own idea of what is visible: it draws
-                            // a header and an action strip over this surface and says
-                            // where, so the words go in the gap rather than under the
-                            // furniture.
-                            modifier = androidx.compose.ui.Modifier.padding(
-                                insetsFor(area, width, height, dpi / 160f),
-                            ),
+                            surfaceState = state,
+                            surfaceWidthPx = width,
+                            surfaceHeightPx = height,
+                            density = dpi / 160f,
                         )
                     }
                 }

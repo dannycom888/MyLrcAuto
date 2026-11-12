@@ -10,15 +10,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,15 +33,17 @@ import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LyricsState
+import com.dannycom888.mylrcauto.settings.BackgroundStyle
 import com.dannycom888.mylrcauto.ui.LyricsView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * The lyrics screen, drawn on the car's own surface.
@@ -64,6 +67,10 @@ fun CarLyricsContent(
     container: AppContainer,
     positionMsProvider: () -> Long,
     onSeek: (Long) -> Unit,
+    surfaceState: CarSurfaceState,
+    surfaceWidthPx: Int,
+    surfaceHeightPx: Int,
+    density: Float,
     modifier: Modifier = Modifier,
 ) {
     val snapshot by container.media.snapshot.collectAsStateWithLifecycle()
@@ -87,146 +94,166 @@ fun CarLyricsContent(
     val document = (lyricsState as? LyricsState.Loaded)?.document
         ?.takeIf { glance is CarGlance.Now }
 
-    // 500 ms ticker, same as the phone screen: drives recomposition, so
+    // The 500 ms ticker, same as the phone screen: drives recomposition, so
     // LyricsView's positionMsProvider reads a fresh extrapolated playhead.
     // The car surface otherwise only recomposes when a flow emits, which is
     // why the big lyrics panel could freeze while the template card — which
-    // has its own tick loop — kept updating its line. The tick runs whether
-    // or not a document is shown: it is also what lets the Looking timeout
-    // below flip the status text, since nothing else recomposes while the
-    // lookup is still running.
-    var tick by remember(document) { mutableLongStateOf(0L) }
+    // has its own tick loop — kept updating its line.
+    //
+    // The tick state is deliberately NOT keyed on the document. It was
+    // (v1.0.5–v1.0.13): `remember(document)` returned a new state object
+    // every time the lyrics loaded or the song changed, while the
+    // LaunchedEffect below — keyed on Unit, so never restarted — kept
+    // incrementing the OLD one. The composition then read a tick stuck at
+    // 0, `playheadMs` never recomputed, the current line never advanced,
+    // and the list stopped scrolling (and the highlight stuck) from the
+    // moment the first song's lyrics arrived. A heartbeat's value is
+    // irrelevant — only that it changes — so one stable state object for
+    // the composition's lifetime is the whole fix.
+    var tick by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(500)
             tick++
         }
     }
-    val playheadMs = remember(tick) { positionMsProvider() }
+    // Refreshed on either driver: the local tick above, or the snapshot
+    // the repository re-emits every 500 ms while playing. Either one
+    // stalling must not freeze the playhead again — a stall used to leave
+    // the list still for a minute and then jump a long way when the
+    // position finally updated, instead of following line by line.
+    // positionMsProvider reads the live snapshot, so the value is fresh
+    // whichever driver recomputes it.
+    val playheadMs = remember(tick, snapshot) { positionMsProvider() }
 
-    // Past the timeout, the surface says "no lyrics" instead of "looking"
-    // — the same answer the fallback template gives after the same wait
-    // (CarLyricsScreen). Without this the surface could show "looking"
-    // forever while the template next to it had already given up.
-    var lookingSinceMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(glance is CarGlance.Looking) {
-        lookingSinceMs = if (glance is CarGlance.Looking) {
-            System.currentTimeMillis()
-        } else {
-            0L
-        }
-    }
-    val lookingTimedOut = glance is CarGlance.Looking && lookingSinceMs != 0L &&
-        System.currentTimeMillis() - lookingSinceMs > CarGlance.LOOKING_TIMEOUT_MS
-    val statusGlance = if (lookingTimedOut) CarGlance.None else glance
+    // The status is the glance itself, never a timed-out version of it:
+    // "no lyrics" is only said for CarGlance.None, which the engine only
+    // emits after the lookup actually completed with no match. While the
+    // lookup is still running the surface says "looking", however long
+    // the index walk takes — it used to flip to "no lyrics" after 30
+    // seconds and the lyrics arrived a moment later (see CarLyricsScreen).
+    val statusGlance = glance
 
-    Row(
-        modifier
-            .fillMaxSize()
-            .background(Color(0xFF101820)),
-    ) {
-        // The cover lives here, in a column on the left of the VISIBLE
-        // area, beside the lyrics — never above them, so the list keeps
-        // its full height (see CoverColumn). Shown whenever a track is
-        // playing.
-        //
-        // It cannot go BELOW the template pane (the top-left box): the
-        // region under the pane is not the app's surface. The host grants
-        // the surface, then reports the unobstructed part as the visible
-        // area — and on this car that rectangle starts to the RIGHT of the
-        // pane column (the car's own photo proves it: the app's content
-        // begins ~60% across the screen, with the whole left strip below
-        // the pane empty). The pane column is host-reserved space for the
-        // full height, so there is nowhere below the pane to draw. The
-        // narrower column (v1.0.10) is the app-side answer instead.
-        if (snapshot.hasTrack) {
-            CoverColumn(
-                artwork = snapshot.artwork,
-                title = snapshot.track?.title?.takeIf { it.isNotBlank() }
-                    ?: stringResource(R.string.app_name),
-                artist = snapshot.track?.artist.orEmpty(),
-            )
-        }
-        Box(Modifier.weight(1f).fillMaxHeight()) {
-            if (document != null) {
-                LyricsView(
-                    document = document,
-                    positionMsProvider = { playheadMs },
-                    onSeek = onSeek,
-                    // The car surface is not touchable, so following must never
-                    // switch itself off: there is no "back to current line"
-                    // button the driver could tap to resume it.
-                    followAlways = true,
-                    // Same size setting as the phone: one slider sizes both.
-                    fontSizeSp = settings.lyricsFontSizeSp,
-                    modifier = Modifier.fillMaxSize(),
-                )
+    // The host's visible area: the unobstructed rectangle the lyrics live
+    // in. The surface itself is bigger — the visible area's left edge is
+    // where the pane column ends, and the surface extends left of it (the
+    // car's own photo proves it: the content begins ~60% across, so the
+    // surface's left ~60% is real surface). The pane box sits at the top
+    // of that column; below it is drawable surface, and the host draws
+    // nothing there — Melisma's background fills the whole screen
+    // including below its pane. So the small cover goes there (see
+    // belowPaneCoverPlacement), and the lyrics take the visible area's
+    // full width, with no cover column beside them.
+    val area by surfaceState.visibleArea.collectAsStateWithLifecycle()
+    // Inside the host's own idea of what is visible: it draws a header
+    // and an action strip over this surface and says where, so the words
+    // go in the gap rather than under the furniture.
+    val contentPadding = insetsFor(area, surfaceWidthPx, surfaceHeightPx, density)
+    val coverPlacement = belowPaneCoverPlacement(
+        areaLeftPx = area?.left,
+        surfaceHeightPx = surfaceHeightPx,
+        density = density,
+    )
+
+    // Background, computed once per cover: the blurred cover (dimmed, under
+    // a black scrim) for the Cover style, plain black for All black, and
+    // the old dark colour when Cover is picked but there is no cover yet.
+    // LaunchedEffect (not produceState) so a track change keeps the
+    // previous backdrop until the new one is ready instead of flashing
+    // dark. The blur runs off the main thread and is keyed on the cover
+    // bitmap itself, so the 500 ms playhead ticker — which keeps the same
+    // artwork reference — never re-runs it. A failure is a null backdrop
+    // and the dark fallback, never a crash on the car surface.
+    val cover = snapshot.artwork?.takeUnless { it.isRecycled }
+    var coverBackdrop by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(cover, settings.backgroundStyle, settings.coverBlurPx) {
+        coverBackdrop = withContext(Dispatchers.Default) {
+            if (settings.backgroundStyle == BackgroundStyle.COVER && cover != null) {
+                runCatching { CoverBackground.blurCover(cover, settings.coverBlurPx) }.getOrNull()
             } else {
-                CarStatus(glance = statusGlance)
+                null
             }
         }
     }
-}
 
-/**
- * The current track's cover, title and artist, in a column on the left of
- * the surface, beside the lyrics.
- *
- * The cover lives here, not in the template pane: this car's system ignores
- * Pane.setImage in the MapWithContentTemplate content pane (title and
- * artist show, no image at all), while the surface is drawn by the app
- * itself, so a cover drawn here is guaranteed visible. It sits beside the
- * lyrics, never above them, so the list keeps its full height. The cover
- * comes from the player's own metadata (see MediaSessionRepository); a
- * recycled bitmap is treated as no cover, and the app's M-note icon stands
- * in when the player publishes none.
- *
- * Narrow (v1.0.10): the column is 172dp with a 140dp cover, down from
- * 212dp / 180dp — the pane on this car cannot be moved, so giving the
- * lyrics ~40dp more width is the app-side answer to "more room for the
- * lyrics".
- */
-@Composable
-private fun CoverColumn(
-    artwork: Bitmap?,
-    title: String,
-    artist: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .width(172.dp)
-            .fillMaxHeight()
-            .padding(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 16.dp),
-    ) {
-        val cover = artwork?.takeUnless { it.isRecycled }?.asImageBitmap()
-            ?: ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)
-        Image(
-            bitmap = cover,
-            contentDescription = null,
-            modifier = Modifier
-                .size(140.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            contentScale = ContentScale.Crop,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = title,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (artist.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = artist,
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 15.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+    // The backdrop is the app's own surface only: the host-drawn pane
+    // (top-left box) is the car's UI and is never touched. The scrim
+    // sits between the blurred cover and the content, so it dims the
+    // backdrop without touching the small sharp cover below the pane or
+    // the lyrics — the glowing current line keeps its colour exactly.
+    Box(modifier.fillMaxSize()) {
+        // A delegated property cannot be smart-cast, so capture it first.
+        val backdrop = coverBackdrop
+        if (settings.backgroundStyle == BackgroundStyle.COVER && backdrop != null) {
+            Image(
+                bitmap = backdrop.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
             )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = CoverBackground.SCRIM_ALPHA)),
+            )
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        if (settings.backgroundStyle == BackgroundStyle.BLACK) {
+                            Color.Black
+                        } else {
+                            // Cover picked but no cover (yet): the old dark
+                            // colour, never white.
+                            Color(0xFF101820)
+                        },
+                    ),
+            )
+        }
+        // The small cover below the pane, in the pane column: the sharp
+        // cover (or the M-note icon when the player publishes none),
+        // shrunk to 120dp. The title and artist stay in the pane itself,
+        // so they are not repeated here. Shown only while a track is
+        // playing; without a visible area yet there is no column to put
+        // it in, so it stays hidden.
+        if (snapshot.hasTrack && coverPlacement != null) {
+            val smallCover = cover?.asImageBitmap()
+                ?: ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)
+            Image(
+                bitmap = smallCover,
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = coverPlacement.leftDp.dp, y = coverPlacement.topDp.dp)
+                    .size(coverPlacement.sizeDp.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+        ) {
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                if (document != null) {
+                    LyricsView(
+                        document = document,
+                        positionMsProvider = { playheadMs },
+                        onSeek = onSeek,
+                        // The car surface is not touchable, so following must never
+                        // switch itself off: there is no "back to current line"
+                        // button the driver could tap to resume it.
+                        followAlways = true,
+                        // Same size setting as the phone: one slider sizes both.
+                        fontSizeSp = settings.lyricsFontSizeSp,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    CarStatus(glance = statusGlance)
+                }
+            }
         }
     }
 }

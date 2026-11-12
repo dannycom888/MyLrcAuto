@@ -42,6 +42,7 @@ import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.settings.AppLanguage
+import com.dannycom888.mylrcauto.settings.BackgroundStyle
 import com.dannycom888.mylrcauto.settings.SettingsStore
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -70,6 +71,15 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
         AppLanguage.SYSTEM -> R.string.settings_language_system
         AppLanguage.CHINESE -> R.string.settings_language_chinese
         AppLanguage.ENGLISH -> R.string.settings_language_english
+    },
+)
+
+/** Background choice → its label string. */
+@Composable
+private fun backgroundLabel(style: BackgroundStyle): String = stringResource(
+    when (style) {
+        BackgroundStyle.COVER -> R.string.settings_background_cover
+        BackgroundStyle.BLACK -> R.string.settings_background_black
     },
 )
 
@@ -196,6 +206,67 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 ..SettingsStore.MAX_LYRICS_FONT_SIZE_SP.toFloat(),
             steps = SettingsStore.MAX_LYRICS_FONT_SIZE_SP -
                 SettingsStore.MIN_LYRICS_FONT_SIZE_SP - 1,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Background — the big screen's backdrop, behind the lyrics. Cover
+        // draws the current track's cover, blurred; All black is plain
+        // black (the default — the user likes it, and the glowing current
+        // line stands out most on it). The blur slider only applies to
+        // Cover, so it is disabled while All black is picked; the value
+        // itself is still kept, so switching back restores it.
+        Text(
+            text = stringResource(R.string.settings_background_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        BackgroundStyle.entries.forEach { style ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { container.settings.setBackgroundStyle(style) }
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = settings.backgroundStyle == style,
+                    onClick = { container.settings.setBackgroundStyle(style) },
+                )
+                Text(
+                    text = backgroundLabel(style),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.settings_background_blur_title),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = stringResource(
+                    R.string.settings_background_blur_value,
+                    settings.coverBlurPx,
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        Slider(
+            value = settings.coverBlurPx.toFloat(),
+            onValueChange = { container.settings.setCoverBlurPx(it.roundToInt()) },
+            valueRange = SettingsStore.MIN_COVER_BLUR_PX.toFloat()
+                ..SettingsStore.MAX_COVER_BLUR_PX.toFloat(),
+            steps = SettingsStore.MAX_COVER_BLUR_PX -
+                SettingsStore.MIN_COVER_BLUR_PX - 1,
+            enabled = settings.backgroundStyle == BackgroundStyle.COVER,
             modifier = Modifier.fillMaxWidth(),
         )
 

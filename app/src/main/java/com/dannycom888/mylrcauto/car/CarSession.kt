@@ -12,6 +12,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.MyLrcAutoApp
+import com.dannycom888.mylrcauto.media.MirrorServiceControl
 
 /**
  * One connection to a car, for as long as it lasts.
@@ -53,6 +54,15 @@ class CarSession : Session(), SavedStateRegistryOwner {
 
     override fun onCreateScreen(intent: Intent): Screen {
         val app = container
+
+        // The main screen is created: the car app is the foreground app,
+        // so starting the mirror service is allowed here too — the same
+        // start the session creation already attempted, and the snapshot
+        // hook's background start may have been blocked (v1.0.13).
+        // Starting an already-running service is a no-op.
+        startMirrorFromCarApp(app.media.snapshot.value) {
+            MirrorServiceControl.start(carContext.applicationContext)
+        }
 
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {

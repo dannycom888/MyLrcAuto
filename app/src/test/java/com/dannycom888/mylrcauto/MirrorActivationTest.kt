@@ -3,9 +3,11 @@ package com.dannycom888.mylrcauto
 import com.dannycom888.mylrcauto.media.MirrorAction
 import com.dannycom888.mylrcauto.media.MirrorActivation
 import com.dannycom888.mylrcauto.media.MirrorActivationTracker
+import com.dannycom888.mylrcauto.media.MirrorStartResult
 import com.dannycom888.mylrcauto.media.PlayerSnapshot
 import com.dannycom888.mylrcauto.media.PlaybackPosition
 import com.dannycom888.mylrcauto.media.TrackInfo
+import com.dannycom888.mylrcauto.media.startMirrorWithFallback
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -17,10 +19,12 @@ import org.junit.Test
  * running, and the car host never starts it in the user's flow
  * (Poweramp selected, then tap the app — tapping opens the
  * CarAppService template, never the browser service). So the app
- * itself must start the service the moment a track is playing and
- * stop it when playback stops or there is no track — no picker
- * selection. These tests pin that decision and the tracker that
- * turns the snapshot stream into at most one start/stop per change.
+ * itself must start the service the moment a track is loaded and
+ * stop it when there is no track — no picker selection. These tests
+ * pin that decision and the tracker that turns the snapshot stream
+ * into at most one start/stop per change. (v1.0.14: a paused track
+ * still counts as loaded, so the card keeps its lyric line while
+ * paused.)
  */
 class MirrorActivationTest {
 
@@ -52,8 +56,11 @@ class MirrorActivationTest {
     }
 
     @Test
-    fun pausedTrackDoesNotWantTheMirror() {
-        assertFalse(MirrorActivation.shouldBeActive(snapshot(isPlaying = false)))
+    fun pausedTrackStillWantsTheMirror() {
+        // v1.0.14: a paused track still has a current lyric line, and the
+        // card should keep showing it — stopping on pause made the card
+        // fall back to Poweramp's the moment he paused.
+        assertTrue(MirrorActivation.shouldBeActive(snapshot(isPlaying = false)))
     }
 
     @Test
@@ -108,6 +115,9 @@ class MirrorActivationTest {
 
     @Test
     fun fullSequencePlayPausePlayNoTrack() {
+        // v1.0.14: the mirror is wanted while a track is loaded, playing
+        // or paused — so pausing does not stop it; only losing the track
+        // does.
         val tracker = MirrorActivationTracker()
         val actions = listOf(
             snapshot(isPlaying = true),
@@ -118,9 +128,51 @@ class MirrorActivationTest {
         ).map { MirrorActivation.shouldBeActive(it) }
             .map { tracker.update(it) }
         assertEquals(
-            listOf(MirrorAction.START, null, MirrorAction.STOP, MirrorAction.START, MirrorAction.STOP),
+            listOf(MirrorAction.START, null, null, null, MirrorAction.STOP),
             actions,
         )
         assertFalse(tracker.active)
+    }
+
+    @Test
+    fun plainStartSuccessDoesNotTouchForegroundStart() {
+        var foregroundCalled = false
+        val result = startMirrorWithFallback(
+            startService = {},
+            startForegroundService = { foregroundCalled = true },
+        )
+        assertEquals(MirrorStartResult.STARTED, result)
+        assertFalse(foregroundCalled)
+    }
+
+    @Test
+    fun backgroundRefusalFallsBackToForegroundStart() {
+        var foregroundCalled = false
+        val result = startMirrorWithFallback(
+            startService = { throw IllegalStateException("background start not allowed") },
+            startForegroundService = { foregroundCalled = true },
+        )
+        assertEquals(MirrorStartResult.STARTED_FOREGROUND, result)
+        assertTrue(foregroundCalled)
+    }
+
+    @Test
+    fun otherStartFailureDoesNotFallBack() {
+        var foregroundCalled = false
+        val result = startMirrorWithFallback(
+            startService = { throw SecurityException("no permission") },
+            startForegroundService = { foregroundCalled = true },
+        )
+        assertEquals(MirrorStartResult.FAILED, result)
+        assertFalse(foregroundCalled)
+    }
+
+    @Test
+    fun foregroundStartFailingTooReportsFailed() {
+        val result = startMirrorWithFallback(
+            startService = { throw IllegalStateException("background start not allowed") },
+            startForegroundService = { throw IllegalStateException("foreground start failed") },
+        )
+        assertEquals(MirrorStartResult.FAILED, result)
     }
 }

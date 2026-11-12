@@ -2,6 +2,8 @@
 <resources>
     <string name="app_name">My LRC Auto</string>
     <string name="notification_listener_label">My LRC Auto notification listener</string>
+    <string name="mirror_notification_channel">Lyrics mirror</string>
+    <string name="mirror_notification_text">Mirroring the current lyric line to the car.</string>
 
     <string name="player_nothing_playing">Nothing playing</string>
     <string name="player_unknown_artist">Unknown artist</string>
@@ -37,7 +39,12 @@
     <string name="settings_font_size_value">%1$d sp</string>
     <string name="settings_keep_screen_on_title">Keep screen on</string>
     <string name="settings_keep_screen_on_summary">The screen stays on while lyrics are showing.</string>
-    <string name="settings_about">My LRC Auto 1.0.13 — local lyrics only, no network.</string>
+    <string name="settings_background_title">Background</string>
+    <string name="settings_background_cover">Cover</string>
+    <string name="settings_background_black">All black</string>
+    <string name="settings_background_blur_title">Cover blur</string>
+    <string name="settings_background_blur_value">%1$d px</string>
+    <string name="settings_about">My LRC Auto 1.0.14 — local lyrics only, no network.</string>
 
     <string name="car_silent">Nothing playing</string>
     <string name="car_silent_body">Start a song in Poweramp and the words will show here.</string>

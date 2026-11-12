@@ -1,7 +1,9 @@
 package com.dannycom888.mylrcauto
 
+import android.media.session.PlaybackState
 import com.dannycom888.mylrcauto.car.CarGlance
 import com.dannycom888.mylrcauto.media.MirrorPlaybackState
+import com.dannycom888.mylrcauto.media.MirrorTransportActions
 import com.dannycom888.mylrcauto.media.PlayerSnapshot
 import com.dannycom888.mylrcauto.media.PlaybackPosition
 import com.dannycom888.mylrcauto.media.TrackInfo
@@ -9,6 +11,7 @@ import com.dannycom888.mylrcauto.media.Transport
 import com.dannycom888.mylrcauto.media.mirrorMetadata
 import com.dannycom888.mylrcauto.media.mirrorPlayback
 import com.dannycom888.mylrcauto.media.signature
+import com.dannycom888.mylrcauto.media.toFramework
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -216,6 +219,10 @@ class LyricsMirrorTest {
 
     @Test
     fun transportActionsOnlyForSupportedCapabilities() {
+        // Play/pause and seek still follow what the player advertises —
+        // but previous/next track are always offered for a track (see
+        // skipButtonsOfferedEvenWhenPlayerDoesNotAdvertiseThem), so a
+        // player that advertises nothing still gets skip buttons.
         val snapshot = playingSnapshot(
             transport = Transport(
                 playPause = false,
@@ -226,8 +233,46 @@ class LyricsMirrorTest {
         )
         val playback = mirrorPlayback(snapshot, nowElapsed = 1_000L)
         assertFalse(playback.actions.playPause)
-        assertFalse(playback.actions.skipPrevious)
-        assertFalse(playback.actions.skipNext)
+        assertTrue(playback.actions.skipPrevious)
+        assertTrue(playback.actions.skipNext)
         assertFalse(playback.actions.seek)
+    }
+
+    @Test
+    fun skipButtonsOfferedEvenWhenPlayerDoesNotAdvertiseThem() {
+        // Poweramp supports track skipping through its transport
+        // controls but does not advertise SKIP_TO_PREVIOUS / SKIP_TO_NEXT,
+        // so copying the advertised actions left the mirror with no skip
+        // buttons and the car showed 10s rewind/fast-forward instead.
+        // The mirror offers previous/next whenever there is a track.
+        val snapshot = playingSnapshot(
+            transport = Transport(
+                playPause = true,
+                skipPrevious = false,
+                skipNext = false,
+                seek = true,
+            ),
+        )
+        val playback = mirrorPlayback(snapshot, nowElapsed = 1_000L)
+        assertTrue(playback.actions.skipPrevious)
+        assertTrue(playback.actions.skipNext)
+        assertTrue(playback.actions.playPause)
+        assertTrue(playback.actions.seek)
+    }
+
+    @Test
+    fun publishedActionsAreSkipNotRewind() {
+        // The card's buttons come from this bitmask: previous/next
+        // track in, 10s rewind/fast-forward out.
+        val actions = MirrorTransportActions(
+            playPause = true,
+            skipPrevious = true,
+            skipNext = true,
+            seek = true,
+        ).toFramework()
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+        assertTrue(actions and PlaybackState.ACTION_REWIND == 0L)
+        assertTrue(actions and PlaybackState.ACTION_FAST_FORWARD == 0L)
     }
 }

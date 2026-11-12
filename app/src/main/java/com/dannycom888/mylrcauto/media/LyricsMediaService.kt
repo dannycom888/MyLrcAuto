@@ -1,5 +1,7 @@
 package com.dannycom888.mylrcauto.media
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -7,7 +9,9 @@ import android.os.Bundle
 import android.service.media.MediaBrowserService
 import android.util.Log
 import android.media.browse.MediaBrowser
+import androidx.core.app.NotificationCompat
 import com.dannycom888.mylrcauto.MyLrcAutoApp
+import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.car.CarGlance
 import com.dannycom888.mylrcauto.lyrics.LyricsState
 import kotlinx.coroutines.CoroutineScope
@@ -39,13 +43,25 @@ import kotlinx.coroutines.launch
  * while this service lives; what the host shows is driven by the
  * published state — playing/paused with a track, [PlaybackState.STATE_NONE]
  * with no track. The service is started by the app itself, not by the
- * car host: the app starts it the moment a track is playing and stops
- * it when playback stops or there is no track (see [MirrorActivation]
+ * car host: the app starts it the moment a track is loaded and stops
+ * it when there is no track (see [MirrorActivation]
  * and the AppContainer wiring), because the user's flow is Poweramp
  * selected, then tap the app — and tapping the app opens the
  * CarAppService template, never this service, so waiting for the host
  * to bind it would leave the card on Poweramp's session forever.
  * No picker selection is needed, and none is asked for.
+ *
+ * Foreground: the service promotes itself in [onCreate], with a
+ * minimal silent notification, whichever way it was started. A plain
+ * background start is refused outright when the process is
+ * backgrounded (v1.0.13: the snapshot hook's start was blocked while
+ * the phone sat in the pocket), and a foreground start
+ * (`startForegroundService`) requires a `startForeground` call within
+ * seconds — so the promotion happens here, at once, and the
+ * notification only exists while the service runs, which is while a
+ * track is playing. It is low-importance, so it never sounds or pops
+ * up. The service is declared `mediaPlayback` in the manifest for
+ * exactly this.
  *
  * Updates: the render is driven by the snapshot, the lyrics state and
  * the permission flag — the same inputs the car screen reads. Metadata
@@ -70,6 +86,11 @@ class LyricsMediaService : MediaBrowserService() {
     @Suppress("DEPRECATION")
     override fun onCreate() {
         super.onCreate()
+        // Promote first, before anything else: a foreground start gives
+        // the service seconds to call startForeground, and a background
+        // start is refused outright — so the promotion happens here, at
+        // once, whichever way the service was started.
+        promoteToForeground()
         val container = (applicationContext as MyLrcAutoApp).container
 
         mediaSession = MediaSession(this, SESSION_TAG).apply {
@@ -100,7 +121,35 @@ class LyricsMediaService : MediaBrowserService() {
         scope.cancel()
         runCatching { mediaSession.isActive = false }
         runCatching { mediaSession.release() }
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         super.onDestroy()
+    }
+
+    /**
+     * The minimal silent notification that makes this a foreground
+     * service. Low-importance channel, no sound, no badge, no pop-up —
+     * it only says the mirror is running, and it only exists while a
+     * track is playing (the service is stopped when playback stops).
+     */
+    private fun promoteToForeground() {
+        val manager = getSystemService(NotificationManager::class.java)
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            getString(R.string.mirror_notification_channel),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = getString(R.string.mirror_notification_text)
+            setShowBadge(false)
+        }
+        manager.createNotificationChannel(channel)
+        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.mirror_notification_text))
+            .setSilent(true)
+            .setOngoing(true)
+            .build()
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     override fun onGetRoot(
@@ -180,6 +229,8 @@ class LyricsMediaService : MediaBrowserService() {
         private const val TAG = "LyricsMediaService"
         private const val ROOT_ID = "root"
         private const val SESSION_TAG = "MyLrcAuto"
+        private const val NOTIFICATION_CHANNEL_ID = "mirror"
+        private const val NOTIFICATION_ID = 1
     }
 }
 
@@ -214,8 +265,15 @@ private fun MirrorPlayback.toFramework(): PlaybackState =
         .setActions(actions.toFramework())
         .build()
 
-/** Thin framework mapping for the pure transport actions. */
-private fun MirrorTransportActions.toFramework(): Long {
+/**
+ * The transport actions as a `PlaybackState` flags bitmask.
+ *
+ * Internal (not private) so the published actions are unit-testable:
+ * the card must offer skip-to-previous / skip-to-next and never
+ * rewind / fast-forward. The flags are compile-time constants, so
+ * calling this from a plain JVM unit test needs no Android runtime.
+ */
+internal fun MirrorTransportActions.toFramework(): Long {
     var actions = 0L
     if (playPause) {
         actions = actions or PlaybackState.ACTION_PLAY or

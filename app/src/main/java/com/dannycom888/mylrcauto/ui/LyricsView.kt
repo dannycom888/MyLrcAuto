@@ -67,6 +67,19 @@ object LyricsTextSize {
     fun lineHeightSp(baseSp: Int): Int = baseSp + 7
 }
 
+/**
+ * The first visible row the list scrolls to for the current line.
+ *
+ * The current line lands on the third visible row, with two lines of
+ * context above it — clamped to the top at the start of a song and to
+ * the last line at the end. Pure, so the scroll-following decision is
+ * unit-testable: when the current line advances, this target must
+ * advance with it, or the list stops following the song.
+ */
+internal fun scrollTargetIndex(currentIndex: Int, lineCount: Int): Int =
+    (currentIndex - 2).coerceAtLeast(0)
+        .coerceAtMost((lineCount - 1).coerceAtLeast(0))
+
 @Composable
 fun LyricsView(
     document: LyricsDocument,
@@ -111,8 +124,7 @@ fun LyricsView(
     // through so the new run can take over.
     LaunchedEffect(currentIndex, followCurrent) {
         if (followCurrent && currentIndex >= 0) {
-            val target = (currentIndex - 2).coerceAtLeast(0)
-                .coerceAtMost((document.lines.size - 1).coerceAtLeast(0))
+            val target = scrollTargetIndex(currentIndex, document.lines.size)
             try {
                 listState.animateScrollToItem(target)
             } catch (e: CancellationException) {

@@ -122,11 +122,13 @@ class MyLrcAutoApp : Application() {
             // and tapping the app opens the CarAppService template, never
             // the browser service, so in that flow the service never
             // started and the card stayed Poweramp's. The app therefore
-            // starts its own service the moment a track is playing, and
-            // stops it when playback stops or there is no track — no
-            // picker selection needed. The tracker turns the snapshot
-            // stream into at most one start/stop per change, so the
-            // 500ms position ticker never re-starts a running service.
+            // starts its own service the moment a track is loaded, and
+            // stops it when there is no track — no picker selection
+            // needed. (v1.0.14: a paused track still counts as loaded,
+            // so the card keeps its lyric line while paused.) The
+            // tracker turns the snapshot stream into at most one
+            // start/stop per change, so the 500ms position ticker never
+            // re-starts a running service.
             scope.launch {
                 media.snapshot
                     .map { MirrorActivation.shouldBeActive(it) }

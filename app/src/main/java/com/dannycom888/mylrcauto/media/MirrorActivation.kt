@@ -17,9 +17,8 @@ import android.util.Log
  * in his flow the service never started, the session never became
  * active, and the card stayed Poweramp's. AALyrics works with exactly
  * that flow: its session is active as soon as playback is detected,
- * with no picker selection. So this app starts its own service when
- * playback is detected, and stops it when playback stops or there is
- * no track.
+ * with no picker selection. So this app starts its own service when a
+ * track is loaded, and stops it when there is no track.
  *
  * The decision ([shouldBeActive]) and the transition tracker
  * ([MirrorActivationTracker]) are pure and unit-tested; the only
@@ -28,14 +27,18 @@ import android.util.Log
  */
 object MirrorActivation {
     /**
-     * The mirror is wanted exactly while a track is actually playing:
-     * a loaded-but-paused track and no track at all both mean stop.
-     * Paused means no lyric line is advancing, so the card can fall
-     * back to Poweramp's own session; pressing play anywhere starts
-     * the mirror again on the next snapshot.
+     * The mirror is wanted exactly while a track is loaded — playing or
+     * paused. A paused track still has a current lyric line, and the
+     * card should keep showing it: v1.0.13 stopped the service the
+     * moment playback paused, so the session deactivated, the card fell
+     * back to Poweramp's, and the lyric line vanished the moment he
+     * paused — which reads as "the card doesn't work". Keeping the
+     * session active while paused changes nothing about the music
+     * itself (the mirror never plays audio; its transport only
+     * forwards to Poweramp). No track at all means stop.
      */
     fun shouldBeActive(snapshot: PlayerSnapshot): Boolean =
-        snapshot.hasTrack && snapshot.playback.isPlaying
+        snapshot.hasTrack
 }
 
 /** What the activation tracker wants done: start the service, or stop it. */
@@ -65,23 +68,36 @@ class MirrorActivationTracker {
 /**
  * The Android effect: start / stop the mirror service.
  *
- * A plain `startService` is the right call here, not a foreground
- * service with a notification: this app's process is kept in the
- * foreground state by the notification-listener service the system
- * binds to deliver media notifications, so a background-service start
- * is allowed while playback is being watched. If that ever stops
- * being true, the failure shows up in logcat as
- * `IllegalStateException` from this call — the next step then would
- * be `startForegroundService` with a minimal notification, not a
- * silent retry. Either way a failure here must never crash the app:
- * the worst case is the card stays Poweramp's, exactly as in
- * v1.0.12.
+ * A plain `startService` is tried first. It is not enough on its own:
+ * v1.0.13 proved it — the snapshot hook's start was blocked while the
+ * phone sat in the pocket, and the service never started even though
+ * the tracker had already recorded "active", so the card stayed
+ * Poweramp's. A background start throws `IllegalStateException` when
+ * the process is not in a state that allows it, and the fallback is
+ * `startForegroundService`: the service promotes itself to foreground
+ * with a minimal silent notification in `onCreate`
+ * ([LyricsMediaService]), so the foreground start cannot strand it.
+ * Either way a failure here must never crash the app: the worst case
+ * is the card stays Poweramp's, exactly as in v1.0.12.
  */
 object MirrorServiceControl {
     fun start(context: Context) {
-        runCatching {
-            context.startService(Intent(context, LyricsMediaService::class.java))
-        }.onFailure { Log.w(TAG, "could not start mirror media service", it) }
+        when (
+            startMirrorWithFallback(
+                startService = {
+                    context.startService(Intent(context, LyricsMediaService::class.java))
+                },
+                startForegroundService = {
+                    context.startForegroundService(Intent(context, LyricsMediaService::class.java))
+                },
+            )
+        ) {
+            MirrorStartResult.STARTED -> Unit
+            MirrorStartResult.STARTED_FOREGROUND ->
+                Log.i(TAG, "mirror media service started in foreground")
+            MirrorStartResult.FAILED ->
+                Log.w(TAG, "could not start mirror media service")
+        }
     }
 
     fun stop(context: Context) {
@@ -91,4 +107,47 @@ object MirrorServiceControl {
     }
 
     private const val TAG = "MirrorServiceControl"
+}
+
+/** How a mirror service start went, for the caller to log. */
+internal enum class MirrorStartResult {
+    /** The plain background start worked. */
+    STARTED,
+
+    /** The background start was refused; the foreground start worked. */
+    STARTED_FOREGROUND,
+
+    /** Neither start worked. */
+    FAILED,
+}
+
+/**
+ * Start the mirror service, with the foreground fallback.
+ *
+ * Pure apart from the two lambdas the caller supplies, so the fallback
+ * is unit-testable without a Context: a plain start that throws
+ * `IllegalStateException` (background start not allowed from this
+ * process state) falls back to the foreground start; any other failure
+ * does not — retrying a different start cannot fix a missing service
+ * or a bad intent. No logging here: the caller logs the result, so a
+ * unit test never touches `android.util.Log`.
+ */
+internal fun startMirrorWithFallback(
+    startService: () -> Unit,
+    startForegroundService: () -> Unit,
+): MirrorStartResult {
+    try {
+        startService()
+        return MirrorStartResult.STARTED
+    } catch (e: IllegalStateException) {
+        // Background start refused — fall through to the foreground start.
+    } catch (_: Exception) {
+        return MirrorStartResult.FAILED
+    }
+    return try {
+        startForegroundService()
+        MirrorStartResult.STARTED_FOREGROUND
+    } catch (_: Exception) {
+        MirrorStartResult.FAILED
+    }
 }
