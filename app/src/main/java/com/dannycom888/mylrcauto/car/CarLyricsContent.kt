@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -121,12 +123,14 @@ fun CarLyricsContent(
     // whichever driver recomputes it.
     val playheadMs = remember(tick, snapshot) { positionMsProvider() }
 
-    // The status is the glance itself, never a timed-out version of it:
-    // "no lyrics" is only said for CarGlance.None, which the engine only
-    // emits after the lookup actually completed with no match. While the
-    // lookup is still running the surface says "looking", however long
-    // the index walk takes — it used to flip to "no lyrics" after 30
-    // seconds and the lyrics arrived a moment later (see CarLyricsScreen).
+    // The status is the glance itself. There is no "no lyrics" text
+    // anywhere on this screen any more: it flashed on every song
+    // switch (the lookup had not finished yet, or the template build
+    // had failed over to it) and then the lyrics arrived, so the words
+    // themselves were the bug, not the lookup. When there are no lyrics
+    // to show — still looking, or a lookup that completed with no
+    // match — the lyrics area stays empty, with the cover and the title
+    // still showing; nothing ever says "no lyrics".
     val statusGlance = glance
 
     // The host's visible area: the unobstructed rectangle the lyrics live
@@ -163,23 +167,39 @@ fun CarLyricsContent(
         )
         // The small cover below the pane, in the pane column: the sharp
         // cover (or the M-note icon when the player publishes none),
-        // 240dp. The title and artist stay in the pane itself,
-        // so they are not repeated here. Shown only while a track is
-        // playing; without a visible area yet there is no column to put
-        // it in, so it stays hidden.
+        // 180dp, its top edge below the pane's midline with clear space
+        // between the pane and the cover. The title and artist stay in
+        // the pane itself, so they are not repeated here. A soft glow
+        // runs around the cover's edge, in the theme's secondary colour
+        // — the same colour as the glowing current lyric line. Shown
+        // only while a track is playing; without a visible area yet
+        // there is no column to put it in, so it stays hidden.
         if (snapshot.hasTrack && coverPlacement != null) {
             val smallCover = cover?.asImageBitmap()
                 ?: ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)
-            Image(
-                bitmap = smallCover,
-                contentDescription = null,
+            val glow = MaterialTheme.colorScheme.secondary
+            Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset(x = coverPlacement.leftDp.dp, y = coverPlacement.topDp.dp)
                     .size(coverPlacement.sizeDp.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop,
-            )
+                    .shadow(
+                        elevation = COVER_GLOW_DP.dp,
+                        shape = RoundedCornerShape(8.dp),
+                        clip = false,
+                        ambientColor = glow.copy(alpha = 0.55f),
+                        spotColor = glow.copy(alpha = 0.55f),
+                    ),
+            ) {
+                Image(
+                    bitmap = smallCover,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+            }
         }
         Row(
             Modifier
@@ -212,6 +232,13 @@ fun CarLyricsContent(
 }
 
 /**
+ * The cover's glow: the shadow elevation around the cover's edge, in
+ * dp. A soft halo on the black background, in the same colour as the
+ * glowing current lyric line.
+ */
+private const val COVER_GLOW_DP = 20f
+
+/**
  * One or two lines, because that is all a driver should be given to read.
  *
  * The templated screen says the same things at more length; this is the
@@ -220,13 +247,20 @@ fun CarLyricsContent(
  */
 @Composable
 private fun CarStatus(glance: CarGlance) {
+    // No lyrics to show is an empty area, never a message: the "no
+    // lyrics" text flashed on every song switch and was deleted. The
+    // cover and the title still show above this; this is only the
+    // lyrics area, blank until the words arrive.
+    if (glance is CarGlance.None) return
     val (title, body) = when (glance) {
         CarGlance.Silent ->
             stringResource(R.string.car_silent) to stringResource(R.string.car_silent_body)
         CarGlance.Looking ->
             stringResource(R.string.car_looking) to null
-        CarGlance.None ->
-            stringResource(R.string.car_none) to stringResource(R.string.car_none_body)
+        is CarGlance.None ->
+            // Unreachable: the early return above handles None. Kept
+            // only so the when stays exhaustive.
+            stringResource(R.string.car_looking) to null
         CarGlance.Untimed ->
             stringResource(R.string.car_untimed) to stringResource(R.string.car_untimed_body)
         CarGlance.NoPermission ->

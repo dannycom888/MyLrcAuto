@@ -49,19 +49,59 @@ enum class MirrorAction {
 
 /**
  * Remembers whether the mirror service is currently wanted, and turns
- * a stream of wants into at most one action per change — so the
- * repository's 500ms position ticker, which re-emits the snapshot
- * while playing, never re-starts an already-running service, and a
- * stop is only sent once.
+ * a stream of wants into actions — at most one start/stop per change,
+ * plus re-starts that keep the card alive.
+ *
+ * The plain flip-only version of this tracker stranded the card: it
+ * recorded "active" the moment a start was *asked for*, even when the
+ * start itself failed (blocked while the phone sat in the pocket), and
+ * the snapshot hook's `distinctUntilChanged` then never re-fired — so
+ * a service that died, or never started, stayed dead for the whole
+ * drive. This version re-issues START in the two cases that mean the
+ * service may not be running even though it is still wanted: the
+ * track changed (a new song is a fresh chance the old service missed),
+ * and the last start attempt is older than [RETRY_INTERVAL_MS] (a
+ * start refused once may succeed a few seconds later, and a service
+ * killed mid-drive comes back). Starting an already-running service
+ * is a no-op, so a redundant START is harmless; the throttle keeps
+ * the repository's 500ms position ticker from re-starting a running
+ * service every half second.
  */
 class MirrorActivationTracker {
     var active: Boolean = false
         private set
 
-    fun update(wantActive: Boolean): MirrorAction? {
-        if (wantActive == active) return null
-        active = wantActive
-        return if (wantActive) MirrorAction.START else MirrorAction.STOP
+    private var lastTrackKey: String? = null
+    private var lastStartAttemptMs: Long = 0L
+
+    fun update(wantActive: Boolean, trackKey: String?, nowMs: Long): MirrorAction? {
+        if (!wantActive) {
+            if (!active) return null
+            active = false
+            lastTrackKey = null
+            return MirrorAction.STOP
+        }
+        if (!active) {
+            active = true
+            lastTrackKey = trackKey
+            lastStartAttemptMs = nowMs
+            return MirrorAction.START
+        }
+        if (trackKey != lastTrackKey) {
+            lastTrackKey = trackKey
+            lastStartAttemptMs = nowMs
+            return MirrorAction.START
+        }
+        if (nowMs - lastStartAttemptMs >= RETRY_INTERVAL_MS) {
+            lastStartAttemptMs = nowMs
+            return MirrorAction.START
+        }
+        return null
+    }
+
+    companion object {
+        /** A start refused once is retried no more often than this. */
+        const val RETRY_INTERVAL_MS = 5_000L
     }
 }
 

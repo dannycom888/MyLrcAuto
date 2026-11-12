@@ -80,58 +80,94 @@ class MirrorActivationTest {
     fun trackerStartsOnceOnFirstPlayingSnapshot() {
         val tracker = MirrorActivationTracker()
         assertFalse(tracker.active)
-        assertEquals(MirrorAction.START, tracker.update(true))
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 0L))
         assertTrue(tracker.active)
     }
 
     @Test
     fun trackerDoesNotReStartWhileAlreadyActive() {
         val tracker = MirrorActivationTracker()
-        assertEquals(MirrorAction.START, tracker.update(true))
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 0L))
         // The repository's 500ms position ticker re-emits the snapshot
-        // while playing; that must not re-start a running service.
-        assertNull(tracker.update(true))
-        assertNull(tracker.update(true))
+        // while playing; that must not re-start a running service
+        // within the retry interval.
+        assertNull(tracker.update(true, track.key, nowMs = 500L))
+        assertNull(tracker.update(true, track.key, nowMs = 4_999L))
         assertTrue(tracker.active)
     }
 
     @Test
     fun trackerStopsOnceWhenPlaybackStops() {
         val tracker = MirrorActivationTracker()
-        assertEquals(MirrorAction.START, tracker.update(true))
-        assertEquals(MirrorAction.STOP, tracker.update(false))
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 0L))
+        assertEquals(MirrorAction.STOP, tracker.update(false, null, nowMs = 1_000L))
         assertFalse(tracker.active)
-        assertNull(tracker.update(false))
+        assertNull(tracker.update(false, null, nowMs = 2_000L))
     }
 
     @Test
     fun trackerRestartsAfterAStop() {
         val tracker = MirrorActivationTracker()
-        assertEquals(MirrorAction.START, tracker.update(true))
-        assertEquals(MirrorAction.STOP, tracker.update(false))
-        assertEquals(MirrorAction.START, tracker.update(true))
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 0L))
+        assertEquals(MirrorAction.STOP, tracker.update(false, null, nowMs = 1_000L))
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 2_000L))
         assertTrue(tracker.active)
     }
 
     @Test
     fun fullSequencePlayPausePlayNoTrack() {
-        // v1.0.14: the mirror is wanted while a track is loaded, playing
-        // or paused — so pausing does not stop it; only losing the track
-        // does.
+        // v1.0.14: a paused track still counts as loaded, playing
+        // or paused — so pausing does not stop it; only losing the
+        // track does.
         val tracker = MirrorActivationTracker()
-        val actions = listOf(
+        val snapshots = listOf(
             snapshot(isPlaying = true),
             snapshot(isPlaying = true),
             snapshot(isPlaying = false),
             snapshot(isPlaying = true),
             snapshot(isPlaying = false, track = null),
-        ).map { MirrorActivation.shouldBeActive(it) }
-            .map { tracker.update(it) }
+        )
+        val actions = snapshots.mapIndexed { index, snap ->
+            tracker.update(
+                MirrorActivation.shouldBeActive(snap),
+                snap.track?.key,
+                nowMs = index * 1_000L,
+            )
+        }
         assertEquals(
             listOf(MirrorAction.START, null, null, null, MirrorAction.STOP),
             actions,
         )
         assertFalse(tracker.active)
+    }
+
+    @Test
+    fun trackerReStartsWhenTrackChanges() {
+        // A service that died, or never started, must be re-attempted
+        // when the next song loads — a flip-only tracker recorded
+        // "active" once and never fired again, which stranded the
+        // card for the whole drive.
+        val tracker = MirrorActivationTracker()
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 0L))
+        val nextTrack = track.copy(title = "江南")
+        assertEquals(
+            MirrorAction.START,
+            tracker.update(true, nextTrack.key, nowMs = 1_000L),
+        )
+        assertTrue(tracker.active)
+    }
+
+    @Test
+    fun trackerRetriesStartAfterFiveSeconds() {
+        // A start refused once is retried: the same track, still
+        // wanted, earns another START once the retry interval has
+        // passed — but not before.
+        val tracker = MirrorActivationTracker()
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 0L))
+        assertNull(tracker.update(true, track.key, nowMs = 4_999L))
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 5_000L))
+        assertNull(tracker.update(true, track.key, nowMs = 9_999L))
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 10_000L))
     }
 
     @Test

@@ -138,10 +138,13 @@ internal interface MirrorStateSink {
  * `onCreate` before the first (async) render published any state, so
  * the host's dashboard card locked in its buttons from that first,
  * empty read and never re-derived them. The fix is to publish a
- * complete state — with the skip actions — synchronously, before the
- * session goes active (see [LyricsMediaService]), and this function is
- * the single publish path both the initial publish and the render loop
- * use.
+ * complete state — with the skip actions — synchronously from the
+ * current snapshot right after the session goes active (see
+ * [LyricsMediaService]), and this function is the single publish path
+ * both the initial publish and the render loop use. v1.0.15 published
+ * before activation instead; that made a throwing first publish fatal
+ * to the whole service, so v1.0.17 went back to activate-first with
+ * the synchronous publish guarded.
  */
 internal fun publishMirrorState(
     sink: MirrorStateSink,

@@ -157,7 +157,7 @@ class CarLyricsScreen(
             content.toTemplate()
         } catch (e: Exception) {
             Log.w(TAG, "template build failed, showing a message instead", e)
-            message(R.string.car_none, R.string.car_none_body)
+            message(R.string.car_failed, R.string.car_failed_body)
         }
     }
 
@@ -216,6 +216,13 @@ class CarLyricsScreen(
         // needs a content pane, and without one the host shows no surface
         // at all.
         //
+        // The pane carries the app name as its title strip, above the
+        // song title and artist row: the pane shows "My LRC Auto" as
+        // well as what is playing. v1.0.10 dropped the strip to narrow
+        // the host-drawn box so the lyrics got more room; it is back
+        // because the pane should name the app, and the strip costs
+        // only a little width.
+        //
         // The cover is NOT the pane's image: this car's system ignores
         // Pane.setImage in the content pane (two photos: title and artist
         // show, no image at all, not even the fallback icon), so the cover
@@ -224,13 +231,6 @@ class CarLyricsScreen(
         // lives in the fallback template, which is what the car shows in
         // split-screen, where the host draws the template and grants no
         // surface.
-        //
-        // The pane carries no title of its own: the pane's width on this
-        // car looks content-driven, and dropping the "My LRC Auto" strip
-        // is an attempt to narrow the host-drawn box so the lyrics get
-        // more room — harmless if the host shows the app name anyway. The
-        // pane itself stays: MapWithContentTemplate needs a content pane,
-        // and without one the host shows no surface at all.
         val pane = Pane.Builder()
             .addRow(
                 Row.Builder()
@@ -241,6 +241,7 @@ class CarLyricsScreen(
             .build()
 
         val content = PaneTemplate.Builder(pane)
+            .setTitle(carContext.getString(R.string.app_name))
             .setHeaderAction(Action.BACK)
             .build()
 
@@ -253,24 +254,46 @@ class CarLyricsScreen(
 
     private fun Content.fallback(): Template = when (glance) {
         is CarGlance.Now -> lyrics(glance)
-        // Still looking: the loading pane, for as long as it takes. The
-        // lookup used to give up after 30 seconds and say "no lyrics"
-        // instead — but the lookup was still running (a fresh process
-        // walks 1,092 .lrc files before the first one resolves), so the
-        // template flashed "no lyrics" and the lyrics arrived a moment
-        // later. "No lyrics" is only ever said for CarGlance.None,
-        // which the engine only emits after the lookup actually
-        // completed with no match — so for this user, whose songs all
-        // have a .lrc, it effectively never appears.
+        // Still looking: the loading pane, for as long as it takes.
+        // There is no timeout that gives up and says there are no
+        // lyrics — a fresh process walks 1,092 .lrc files before the
+        // first one resolves, and the lookup is still running.
         CarGlance.Looking -> PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
             .setTitle(title)
             .setHeaderAction(Action.BACK)
             .build()
 
         CarGlance.Silent -> message(R.string.car_silent, R.string.car_silent_body)
-        CarGlance.None -> message(R.string.car_none, R.string.car_none_body)
+        // No lyrics for this track: a neutral pane with the title and
+        // artist, and nothing else. The "no lyrics" text flashed on
+        // every song switch and was deleted — a completed lookup with
+        // no match shows the same neutral pane as a lookup still
+        // running, with no words claiming anything is missing.
+        CarGlance.None -> neutralPane()
         CarGlance.Untimed -> message(R.string.car_untimed, R.string.car_untimed_body)
         CarGlance.NoPermission -> message(R.string.car_permission, R.string.car_permission_body)
+    }
+
+    /**
+     * The pane with only the title and artist: what the fallback shows
+     * when there are no lyric lines to draw — no message, no claim.
+     * Same rows as the on-surface pane, so the two cannot disagree
+     * about what is playing.
+     */
+    private fun Content.neutralPane(): Template {
+        val pane = Pane.Builder()
+            .addRow(
+                Row.Builder()
+                    .setTitle(title)
+                    .apply { if (artist.isNotEmpty()) addText(artist) }
+                    .build(),
+            )
+            .build()
+        val template = PaneTemplate.Builder(pane)
+            .setTitle(carContext.getString(R.string.app_name))
+            .setHeaderAction(Action.BACK)
+        transportStrip()?.let { template.setActionStrip(it) }
+        return template.build()
     }
 
     private fun Content.lyrics(glance: CarGlance.Now): Template {

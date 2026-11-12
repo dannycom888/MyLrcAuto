@@ -101,29 +101,40 @@ class LyricsMediaService : MediaBrowserService() {
             setCallback(MirrorCallback(container.media))
         }
         sessionToken = mediaSession.sessionToken
-        // Publish a complete state — with the skip actions — BEFORE the
-        // session goes active. The host reads the session's actions the
-        // moment it becomes active, and the dashboard card locks in its
-        // buttons from that first read; in v1.0.14 the session went
-        // active here with no playback state yet (the first render is
-        // async), so the card saw no skip actions, fell back to 10s
-        // rewind/fast-forward, and never re-derived the buttons even
-        // though every later render published skip. The current snapshot
-        // is read synchronously, so this first publish is already the
-        // live track's state.
-        val sink = MediaSessionSink(mediaSession)
-        lastSignature = publishMirrorState(
-            sink,
-            container.media.snapshot.value,
-            CarGlance.of(
-                state = container.lyrics.state.value,
-                hasTrack = container.media.snapshot.value.hasTrack,
-                permissionGranted = container.media.permissionGranted.value,
-                positionMs = container.media.snapshot.value.playback.currentMs(),
-            ),
-            lastSignature,
-        )
+        // Active FIRST, publish after — the sequence AALyrics uses, and
+        // the one v1.0.13/v1.0.14 used, when the card worked. v1.0.15
+        // inverted it (publish a full state synchronously, then go
+        // active) to fix the card's 10s buttons, but that made the
+        // first publish a gate on the session itself: if it threw —
+        // a recycled cover bitmap cannot be parceled across Binder,
+        // and the snapshot can hold one Poweramp recycled when it
+        // published new metadata — onCreate threw, the service never
+        // started, the session never went active, and there was no
+        // card at all, with the tracker recording "active" so nothing
+        // ever retried it. The session going active must never depend
+        // on a publish succeeding.
         mediaSession.isActive = true
+        // Then publish a complete state — with the skip actions —
+        // synchronously from the current snapshot, so the first state
+        // the host reads already has previous/next instead of the 10s
+        // fallback (the v1.0.15 goal, kept). Guarded, unlike v1.0.15:
+        // a publish that throws is logged and left for the render loop
+        // below, which re-publishes on the next emission — it can no
+        // longer take the service (and with it the card) down.
+        runCatching {
+            val sink = MediaSessionSink(mediaSession)
+            lastSignature = publishMirrorState(
+                sink,
+                container.media.snapshot.value,
+                CarGlance.of(
+                    state = container.lyrics.state.value,
+                    hasTrack = container.media.snapshot.value.hasTrack,
+                    permissionGranted = container.media.permissionGranted.value,
+                    positionMs = container.media.snapshot.value.playback.currentMs(),
+                ),
+                lastSignature,
+            )
+        }.onFailure { Log.w(TAG, "initial mirror publish failed, the render loop will retry", it) }
 
         scope.launch {
             combine(
@@ -261,7 +272,14 @@ private fun MirrorMetadata.toFramework(): MediaMetadata =
         putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
         putString(MediaMetadata.METADATA_KEY_ALBUM, album)
         putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
-        artwork?.let {
+        // A recycled bitmap cannot be parceled across Binder — sending
+        // one throws out of setMetadata. The snapshot can hold a bitmap
+        // Poweramp itself recycled when it published new metadata (the
+        // repository keeps the framework-owned bitmap as-is when it fits
+        // the size cap), so a cover that is already recycled is left
+        // out here rather than published: the card shows the title
+        // without a cover until the next render brings a live one.
+        artwork?.takeUnless { it.isRecycled }?.let {
             putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
             putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, it)
         }

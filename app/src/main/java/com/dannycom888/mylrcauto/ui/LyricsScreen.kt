@@ -221,10 +221,10 @@ fun LyricsScreen(container: AppContainer) {
                 }
             }
             lyricsState is LyricsState.None -> {
-                StatusBlock(
-                    title = stringResource(R.string.status_no_lyrics_title),
-                    body = stringResource(R.string.status_no_lyrics_body),
-                )
+                // No lyrics for this track: nothing is shown. The "no
+                // lyrics" text flashed on every song switch on the car
+                // screen and was deleted there; the phone shows the
+                // same neutral state instead of the words.
             }
             lyricsState is LyricsState.Loaded -> {
                 val document = (lyricsState as LyricsState.Loaded).document

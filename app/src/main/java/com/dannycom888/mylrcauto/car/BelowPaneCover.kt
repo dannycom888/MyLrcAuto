@@ -33,8 +33,12 @@ data class BelowPaneCover(
  *
  * So the cover goes in the pane column, below the pane box, at a fixed
  * offset that clears it: the pane holds one title row plus the artist,
- * ~100dp tall on any car, so 200dp clears it with margin. The lyrics
- * then take the visible area's full width (no cover column beside them).
+ * ~100dp tall on any car, so its horizontal midline sits at ~50dp. The
+ * cover's top edge goes well below that midline — the pane bottom
+ * (~100dp) plus a clear gap — so the cover sits lower with clear space
+ * between the pane and the cover instead of hugging the pane's bottom
+ * edge. The lyrics then take the visible area's full width (no cover
+ * column beside them).
  *
  * Pure float math, so it is unit-testable on the JVM: [areaLeftPx] is the
  * visible area's left edge in surface pixels (null when the host has not
@@ -54,7 +58,8 @@ fun belowPaneCoverPlacement(
     if (columnWidthDp < BELOW_PANE_MIN_COLUMN_DP) return null
     val sizeDp = BELOW_PANE_COVER_SIZE_DP
     val surfaceHeightDp = surfaceHeightPx / density
-    // Below the pane, and clamped so the cover still fits on a short screen.
+    // Below the pane's midline, and clamped so the cover still fits on a
+    // short screen.
     val topDp = minOf(
         BELOW_PANE_TOP_DP,
         (surfaceHeightDp - sizeDp - BELOW_PANE_MARGIN_DP).coerceAtLeast(0f),
@@ -66,11 +71,25 @@ fun belowPaneCoverPlacement(
     )
 }
 
-/** The small cover's size: 240dp, twice the 120dp of v1.0.14 (user asked for 2x). */
-const val BELOW_PANE_COVER_SIZE_DP = 240f
+/** The small cover's size: 180dp, down from the 240dp of v1.0.15. */
+const val BELOW_PANE_COVER_SIZE_DP = 180f
 
-/** Top offset from the surface top: clears the pane box (~100dp) with margin. */
-const val BELOW_PANE_TOP_DP = 200f
+/**
+ * The pane box holds one title row plus the artist, ~100dp tall on any
+ * car (see above); its horizontal midline is half that.
+ */
+const val BELOW_PANE_HEIGHT_DP = 100f
+
+/** The pane's horizontal midline, from the surface top. */
+const val BELOW_PANE_MIDLINE_DP = BELOW_PANE_HEIGHT_DP / 2f
+
+/**
+ * Top offset from the surface top: the pane bottom (~100dp) plus a
+ * 140dp clear gap, so the cover's top edge (240dp) sits well below the
+ * pane's midline (50dp) with clear space between the pane and the
+ * cover, instead of hugging the pane's bottom edge.
+ */
+const val BELOW_PANE_TOP_DP = 240f
 
 /** Margin around the cover inside the pane column. */
 const val BELOW_PANE_MARGIN_DP = 16f

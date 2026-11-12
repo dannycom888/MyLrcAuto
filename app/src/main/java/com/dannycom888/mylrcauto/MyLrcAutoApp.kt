@@ -126,20 +126,26 @@ class MyLrcAutoApp : Application() {
             // stops it when there is no track — no picker selection
             // needed. (v1.0.14: a paused track still counts as loaded,
             // so the card keeps its lyric line while paused.) The
-            // tracker turns the snapshot stream into at most one
-            // start/stop per change, so the 500ms position ticker never
-            // re-starts a running service.
+            // tracker turns the snapshot stream into actions, and it is
+            // the only throttle: this hook collects every snapshot (no
+            // distinctUntilChanged on the boolean), because a start that
+            // failed once — or a service that died mid-drive — must be
+            // re-attempted on the next track change and on the tracker's
+            // 5s retry, not suppressed forever by a flip-only filter
+            // (v1.0.17: that suppression is how the card stayed gone
+            // after a single failed start).
             scope.launch {
-                media.snapshot
-                    .map { MirrorActivation.shouldBeActive(it) }
-                    .distinctUntilChanged()
-                    .collect { wantActive ->
-                        when (mirrorActivation.update(wantActive)) {
-                            MirrorAction.START -> MirrorServiceControl.start(appContext)
-                            MirrorAction.STOP -> MirrorServiceControl.stop(appContext)
-                            null -> Unit
-                        }
+                media.snapshot.collect { snapshot ->
+                    when (mirrorActivation.update(
+                        MirrorActivation.shouldBeActive(snapshot),
+                        snapshot.track?.key,
+                        System.currentTimeMillis(),
+                    )) {
+                        MirrorAction.START -> MirrorServiceControl.start(appContext)
+                        MirrorAction.STOP -> MirrorServiceControl.stop(appContext)
+                        null -> Unit
                     }
+                }
             }
         }
     }

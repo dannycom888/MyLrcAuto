@@ -289,8 +289,9 @@ class LyricsMirrorTest {
         // setPlaybackState on every render, yet the car still showed
         // 10s buttons, because the session went active before the
         // first (async) render published any state; the fix publishes
-        // synchronously before activation through this same function,
-        // so this test pins the publish path, not just the flags.
+        // a complete state synchronously from the current snapshot
+        // right after activation through this same function, so this
+        // test pins the publish path, not just the flags.
         val sink = RecordingSink()
         val signature = publishMirrorState(
             sink,
@@ -331,6 +332,35 @@ class LyricsMirrorTest {
         assertEquals(2, sink.playbackStates.size)
         assertEquals(1, sink.metadata.size)
         assertEquals(first, second)
+    }
+
+    @Test
+    fun publishKeepsCardAliveForNoLyricsSong() {
+        // A song with no lyrics still gets a card: the metadata
+        // carries the cover, title and artist with an empty lyric
+        // line, and the playback state stays PLAYING with the skip
+        // actions. The card must never vanish just because there is
+        // no line to show — the mirror publishes the track either way.
+        val sink = RecordingSink()
+        val signature = publishMirrorState(
+            sink,
+            playingSnapshot(),
+            CarGlance.None,
+            null,
+            nowElapsed = 1_000L,
+        )
+        assertEquals(1, sink.metadata.size)
+        val metadata = sink.metadata.single()!!
+        assertEquals("一千年以后", metadata.title)
+        assertEquals("林俊杰", metadata.artist)
+        assertNull(metadata.subtitle)
+        assertNull(metadata.description)
+        assertEquals(1, sink.playbackStates.size)
+        val playback = sink.playbackStates.single()
+        assertEquals(MirrorPlaybackState.PLAYING, playback.state)
+        assertTrue(playback.actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
+        assertTrue(playback.actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+        assertEquals(metadata.signature(), signature)
     }
 
     /** Records what publishMirrorState sends, in call order. */
