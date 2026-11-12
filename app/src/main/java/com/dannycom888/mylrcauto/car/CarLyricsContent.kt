@@ -206,25 +206,39 @@ fun CarLyricsContent(
                 .fillMaxSize()
                 .padding(contentPadding),
         ) {
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (document != null) {
-                    LyricsView(
-                        document = document,
-                        positionMsProvider = { playheadMs },
-                        onSeek = onSeek,
-                        // The car surface is not touchable, so following must never
-                        // switch itself off: there is no "back to current line"
-                        // button the driver could tap to resume it.
-                        followAlways = true,
-                        // Same size setting as the phone: one slider sizes both.
-                        fontSizeSp = settings.lyricsFontSizeSp,
-                        // Same font choice as the phone: the setting picks the
-                        // font on both surfaces at once.
-                        lyricsFont = settings.lyricsFont,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    CarStatus(glance = statusGlance)
+            // v1.0.18: the lyrics draw only once the host has reported
+            // the visible area. Before that the padding is zero and the
+            // list is laid out from the surface's left edge — under the
+            // pane column, on the left of the screen — and a second
+            // later, when the area arrives, the whole screen shifts
+            // right into place. A first frame drawn edge to edge and
+            // corrected a moment later was judged better than one not
+            // drawn (v1.0.14); the car test proved the opposite — the
+            // shift itself is the bug. Until the area arrives the
+            // surface stays black (the template's pane still shows
+            // what is playing), and the first lyrics frame is already
+            // in the right place.
+            if (area != null) {
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    if (document != null) {
+                        LyricsView(
+                            document = document,
+                            positionMsProvider = { playheadMs },
+                            onSeek = onSeek,
+                            // The car surface is not touchable, so following must never
+                            // switch itself off: there is no "back to current line"
+                            // button the driver could tap to resume it.
+                            followAlways = true,
+                            // Same size setting as the phone: one slider sizes both.
+                            fontSizeSp = settings.lyricsFontSizeSp,
+                            // Same font choice as the phone: the setting picks the
+                            // font on both surfaces at once.
+                            lyricsFont = settings.lyricsFont,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        CarStatus(glance = statusGlance)
+                    }
                 }
             }
         }

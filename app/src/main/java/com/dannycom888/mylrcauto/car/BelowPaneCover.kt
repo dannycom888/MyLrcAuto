@@ -64,8 +64,15 @@ fun belowPaneCoverPlacement(
         BELOW_PANE_TOP_DP,
         (surfaceHeightDp - sizeDp - BELOW_PANE_MARGIN_DP).coerceAtLeast(0f),
     )
+    // Centred in the pane column, under the pane — not hugging the
+    // surface's left edge. v1.0.17 left-aligned it at the margin, and
+    // on the car it read as "on the left side" rather than below the
+    // pane. The gate above guarantees the column is at least margin +
+    // cover + margin wide, so the centred offset is never less than
+    // the margin.
+    val leftDp = (columnWidthDp - sizeDp) / 2f
     return BelowPaneCover(
-        leftDp = BELOW_PANE_MARGIN_DP,
+        leftDp = leftDp,
         topDp = topDp,
         sizeDp = sizeDp,
     )

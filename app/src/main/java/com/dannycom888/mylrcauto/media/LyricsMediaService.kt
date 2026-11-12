@@ -101,26 +101,24 @@ class LyricsMediaService : MediaBrowserService() {
             setCallback(MirrorCallback(container.media))
         }
         sessionToken = mediaSession.sessionToken
-        // Active FIRST, publish after — the sequence AALyrics uses, and
-        // the one v1.0.13/v1.0.14 used, when the card worked. v1.0.15
-        // inverted it (publish a full state synchronously, then go
-        // active) to fix the card's 10s buttons, but that made the
-        // first publish a gate on the session itself: if it threw —
-        // a recycled cover bitmap cannot be parceled across Binder,
-        // and the snapshot can hold one Poweramp recycled when it
-        // published new metadata — onCreate threw, the service never
-        // started, the session never went active, and there was no
-        // card at all, with the tracker recording "active" so nothing
-        // ever retried it. The session going active must never depend
-        // on a publish succeeding.
-        mediaSession.isActive = true
-        // Then publish a complete state — with the skip actions —
-        // synchronously from the current snapshot, so the first state
-        // the host reads already has previous/next instead of the 10s
-        // fallback (the v1.0.15 goal, kept). Guarded, unlike v1.0.15:
-        // a publish that throws is logged and left for the render loop
-        // below, which re-publishes on the next emission — it can no
-        // longer take the service (and with it the card) down.
+        // Publish FIRST, activate after — v1.0.18. The car reads the
+        // session's actions the moment it goes active, and locks the
+        // card's buttons in from that first read: v1.0.14 and v1.0.17
+        // both went active first (v1.0.17 with a synchronous publish
+        // right after), and the car still showed 10s rewind /
+        // fast-forward on both, because its first read found an
+        // empty action set. v1.0.15 published before activation and
+        // that fixed the buttons in principle — but the publish was
+        // unguarded, so a throwing first publish (a recycled cover
+        // bitmap cannot be parceled across Binder) killed onCreate,
+        // the service never started, and there was no card at all.
+        // This version does both: the full state — with the skip
+        // actions — is published synchronously from the current
+        // snapshot BEFORE the session goes active, and the publish is
+        // guarded, so a failure is logged and left for the render
+        // loop below instead of taking the service (and with it the
+        // card) down. Setting state on an inactive session is valid;
+        // the state is there when the car reads it at activation.
         runCatching {
             val sink = MediaSessionSink(mediaSession)
             lastSignature = publishMirrorState(
@@ -135,6 +133,7 @@ class LyricsMediaService : MediaBrowserService() {
                 lastSignature,
             )
         }.onFailure { Log.w(TAG, "initial mirror publish failed, the render loop will retry", it) }
+        mediaSession.isActive = true
 
         scope.launch {
             combine(

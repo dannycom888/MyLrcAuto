@@ -24,8 +24,12 @@ class BelowPaneCoverTest {
         // surface at density 2.0 has a 1200px pane column = 600dp.
         // The cover is 180dp, and its top edge (240dp) sits well below
         // the pane's midline (50dp) with clear space under the pane.
+        // The cover is centred in the pane column (210dp from the left
+        // edge), under the pane — v1.0.17 left-aligned it at the 16dp
+        // margin and on the car it read as "on the left side" rather
+        // than below the pane.
         val placed = belowPaneCoverPlacement(areaLeftPx = 1200, surfaceHeightPx = 1400, density = 2f)
-        assertEquals(16f, placed?.leftDp)
+        assertEquals(210f, placed?.leftDp)
         assertEquals(240f, placed?.topDp)
         assertEquals(180f, placed?.sizeDp)
         assertTrue(placed!!.topDp > BELOW_PANE_MIDLINE_DP)
@@ -34,10 +38,10 @@ class BelowPaneCoverTest {
     @Test
     fun narrowButFittingColumnKeepsFullSizeCover() {
         // A 220dp column fits the 180dp cover with margins (220 - 32 =
-        // 188 >= 180), so the cover stays 180dp.
+        // 188 >= 180), so the cover stays 180dp, centred at 20dp.
         val placed = belowPaneCoverPlacement(areaLeftPx = 440, surfaceHeightPx = 1400, density = 2f)
         assertEquals(180f, placed?.sizeDp)
-        assertEquals(16f, placed?.leftDp)
+        assertEquals(20f, placed?.leftDp)
         assertEquals(240f, placed?.topDp)
     }
 

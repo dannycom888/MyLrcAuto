@@ -1,8 +1,16 @@
-# My LRC Auto 1.0.17
+# My LRC Auto 1.0.18
 
 An original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on the phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.18
+
+- **Wireless Android Auto connects again**: the mirror used to start whenever a track was loaded — with no car anywhere — and its active media session, held by a foreground service, blocked the phone's wireless Android Auto connection (with the app installed wireless never connected; after uninstalling it wireless connected normally and reliably). The mirror now runs only while a car session is live: it starts when the car opens the app with a track already loaded, and stops the moment the car disconnects, so the next connection starts with no active session in the way. Session creation can no longer throw the car app down either.
+- **Big screen no longer shifts**: the lyrics used to draw from the surface's left edge before the host reported the visible area, then shift right a second later when it arrived. The surface now stays black until the visible area is known, so the first lyrics frame is already in the right place.
+- **Cover centred under the pane**: the cover was left-aligned at the surface's left edge and read as "on the left side" rather than below the pane. It is now centred in the pane column, under the pane — still 180dp, its top edge below the pane's midline, with the glowing edge.
+- **Card buttons are previous / next — for real this time**: 1.0.17 went active first and published right after, but the car still showed 10s rewind/fast-forward, because it reads the session's actions the moment the session goes active and locks the buttons in from that first, empty read. This version publishes the complete state — with skip-to-previous / skip-to-next, no rewind/fast-forward — synchronously BEFORE the session goes active, guarded so a failed publish is logged and retried by the render loop instead of taking the service down. The playback state is published before the metadata, so the buttons land even if the metadata publish throws.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.17
 
@@ -111,11 +119,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 135 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 141 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.17 (versionCode 19), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.18 (versionCode 20), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 
@@ -132,6 +140,14 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
+
+## v1.0.18 变化
+
+- **无线 Android Auto 能连上了**：镜像服务以前只要有歌就启动——哪怕手机根本没连车——前台服务拿着一个活跃的媒体会话，挡住了手机无线连车机（装着 App 时无线一直连不上，卸载后无线马上正常）。这版起，镜像只在车机会话存在时运行：车机打开 App 时启动（歌已经在放），断开车机时立刻停掉，下次连接时不再有活跃会话挡路。会话创建也不会再因为抛异常把车机 App 拖垮。
+- **大屏不再左右移**：以前歌词先从画面左边缘画出来，车机报出可见区域后一秒左右整个画面再向右移到位。现在可见区域没报出来之前，大屏只显示黑色，歌词第一帧就已经在正确位置。
+- **封面移到小框正下方**：以前封面贴着画面左边缘，看起来像在“左边”，不是在小框下面。现在封面放在小框那一列的正中间、就在小框下面，还是 180dp，上沿在小框中线下方，边沿发光不变。
+- **卡片按钮改成上一首 / 下一首——这次是真的修了**：1.0.17 是先激活会话、紧接着发布状态，但车机还是显示 10 秒快退/快进，因为车机在会话刚激活那一刻就读了按钮集合，读到的是空的，于是锁定成了 10 秒按钮。这版在会话激活之前，先同步发布一次完整状态（含上一首/下一首、不含快退/快进），发布包在保护里——失败只记日志、交给渲染循环重试，不再能拖垮服务。播放状态先于元数据发布，所以就算元数据发布抛错，按钮也已经发出去了。
+- **图标不变**（v22）。
 
 ## v1.0.17 变化
 
@@ -250,11 +266,11 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 135 个测试，0 失败
+gradle_build :app:testDebugUnitTest   # 141 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.17（versionCode 19），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.18（versionCode 20），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 

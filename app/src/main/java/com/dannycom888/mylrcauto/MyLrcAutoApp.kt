@@ -15,6 +15,10 @@ import com.dannycom888.mylrcauto.util.AppLocale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -58,6 +62,28 @@ class MyLrcAutoApp : Application() {
 
         /** Whether the mirror media service is currently wanted running. */
         private val mirrorActivation = MirrorActivationTracker()
+
+        private val _carSessionLive = MutableStateFlow(false)
+
+        /**
+         * Whether a car session is currently live — a [com.dannycom888.mylrcauto.car.CarSession]
+         * exists because the car connected and opened the app.
+         *
+         * v1.0.18: the mirror gate. The mirror used to start whenever a
+         * track was loaded, with no car anywhere, and its active media
+         * session — held by a foreground service — blocked the phone's
+         * wireless Android Auto connection. The mirror runs only while
+         * this is true; the snapshot hook below combines it with the
+         * track, so disconnecting the car stops the service at once
+         * and the next connection starts with no active session in
+         * the way.
+         */
+        val carSessionLive: StateFlow<Boolean> = _carSessionLive.asStateFlow()
+
+        /** Called by the car session when it starts and when it ends. */
+        fun setCarSessionLive(live: Boolean) {
+            _carSessionLive.value = live
+        }
 
         val settings: SettingsStore = SettingsStore(context)
 
@@ -134,10 +160,22 @@ class MyLrcAutoApp : Application() {
             // 5s retry, not suppressed forever by a flip-only filter
             // (v1.0.17: that suppression is how the card stayed gone
             // after a single failed start).
+            //
+            // v1.0.18: gated on a live car session as well
+            // (carSessionLive). The hook used to start the service
+            // whenever a track was loaded, car or no car — and that
+            // active session, held by a foreground service with the
+            // phone nowhere near a car, blocked the wireless Android
+            // Auto connection. The combined flow fires on either input
+            // changing, so the car connecting starts the mirror (a
+            // track is already loaded) and the car disconnecting stops
+            // it at once, even if the snapshot does not change.
             scope.launch {
-                media.snapshot.collect { snapshot ->
+                combine(media.snapshot, carSessionLive) { snapshot, connected ->
+                    snapshot to connected
+                }.collect { (snapshot, connected) ->
                     when (mirrorActivation.update(
-                        MirrorActivation.shouldBeActive(snapshot),
+                        MirrorActivation.shouldBeActive(snapshot, connected),
                         snapshot.track?.key,
                         System.currentTimeMillis(),
                     )) {

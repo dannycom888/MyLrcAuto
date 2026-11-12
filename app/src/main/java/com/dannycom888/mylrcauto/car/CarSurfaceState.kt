@@ -32,9 +32,14 @@ class CarSurfaceState {
     /**
      * The unobstructed part of the surface, in surface pixels.
      *
-     * Null until the host says otherwise, which the content treats as "all
-     * of it" — a first frame drawn edge to edge and corrected a moment later
-     * is better than one that is not drawn.
+     * Null until the host says otherwise. The content draws nothing
+     * until it arrives: v1.0.14 treated null as "all of it" on the
+     * grounds that a first frame drawn edge to edge and corrected a
+     * moment later beats one not drawn — but the car test showed the
+     * correction itself is the bug (the lyrics appear on the left,
+     * then the whole screen shifts right a second later when the
+     * area arrives). v1.0.18 waits for the area, so the first frame
+     * is already in the right place.
      */
     val visibleArea: StateFlow<Rect?> = _visibleArea.asStateFlow()
 

@@ -55,6 +55,12 @@ class CarSession : Session(), SavedStateRegistryOwner {
     override fun onCreateScreen(intent: Intent): Screen {
         val app = container
 
+        // The car session is live (also set in onCreateSession — this
+        // is the backstop for a session created any other way). The
+        // mirror gate reads this flag, so the service only runs while
+        // the car is actually connected.
+        app.setCarSessionLive(true)
+
         // The main screen is created: the car app is the foreground app,
         // so starting the mirror service is allowed here too — the same
         // start the session creation already attempted, and the snapshot
@@ -68,6 +74,18 @@ class CarSession : Session(), SavedStateRegistryOwner {
             override fun onStart(owner: LifecycleOwner) {
                 app.media.refresh()
                 app.media.start()
+            }
+
+            override fun onDestroy(owner: LifecycleOwner) {
+                // The car is gone: the mirror stops with the session.
+                // v1.0.18 — the service must never outlive the car
+                // connection, or its active media session is still
+                // held the next time the phone tries to connect
+                // wirelessly. The snapshot hook's combined flow fires
+                // the same STOP when the flag flips, but this direct
+                // stop does not depend on that flow being collected.
+                app.setCarSessionLive(false)
+                MirrorServiceControl.stop(carContext.applicationContext)
             }
         })
 

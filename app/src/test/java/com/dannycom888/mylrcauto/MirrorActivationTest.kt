@@ -77,6 +77,42 @@ class MirrorActivationTest {
     }
 
     @Test
+    fun trackLoadedButNoCarDoesNotWantTheMirror() {
+        // v1.0.18: a track loaded is not enough — the mirror runs only
+        // while a car session is live. Without a car the service used
+        // to start anyway and hold an active media session, which
+        // blocked the phone's wireless Android Auto connection.
+        assertFalse(MirrorActivation.shouldBeActive(snapshot(isPlaying = true), false))
+        assertFalse(MirrorActivation.shouldBeActive(snapshot(isPlaying = false), false))
+    }
+
+    @Test
+    fun trackLoadedAndCarConnectedWantsTheMirror() {
+        assertTrue(MirrorActivation.shouldBeActive(snapshot(isPlaying = true), true))
+        assertTrue(MirrorActivation.shouldBeActive(snapshot(isPlaying = false), true))
+    }
+
+    @Test
+    fun noTrackAndCarConnectedDoesNotWantTheMirror() {
+        assertFalse(
+            MirrorActivation.shouldBeActive(snapshot(isPlaying = true, track = null), true),
+        )
+        assertFalse(MirrorActivation.shouldBeActive(PlayerSnapshot(), true))
+    }
+
+    @Test
+    fun carDisconnectStopsTheMirror() {
+        // The car going away must stop the service even though the
+        // track is still loaded: the combined hook drives the tracker
+        // with wantActive = carConnected && hasTrack, so a disconnect
+        // flips it to false and the tracker issues STOP.
+        val tracker = MirrorActivationTracker()
+        assertEquals(MirrorAction.START, tracker.update(true, track.key, nowMs = 0L))
+        assertEquals(MirrorAction.STOP, tracker.update(false, track.key, nowMs = 1_000L))
+        assertFalse(tracker.active)
+    }
+
+    @Test
     fun trackerStartsOnceOnFirstPlayingSnapshot() {
         val tracker = MirrorActivationTracker()
         assertFalse(tracker.active)

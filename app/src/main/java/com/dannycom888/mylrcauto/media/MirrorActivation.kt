@@ -20,6 +20,23 @@ import android.util.Log
  * with no picker selection. So this app starts its own service when a
  * track is loaded, and stops it when there is no track.
  *
+ * v1.0.18 — and only while a car session is live. Starting the
+ * service whenever a track was loaded meant it ran as a foreground
+ * service holding an ACTIVE media session while the phone was
+ * nowhere near a car (playing or paused, at home, in the pocket) —
+ * and that blocked the phone's wireless Android Auto connection:
+ * with the app installed wireless never connected, and after
+ * uninstalling it wireless connected normally and reliably.
+ * AALyrics' equivalent service never self-starts and never runs as
+ * a foreground service; it exists only when a media client binds to
+ * it, so it holds no active session while disconnected and never
+ * interferes with the connection handshake. The mirror's only
+ * consumer is the car's dashboard card, so it has no business
+ * running without a car: the gate is [shouldBeActive] with a live
+ * car session, and the session ending stops the service (and
+ * deactivates the session) at once, so the next connection starts
+ * clean.
+ *
  * The decision ([shouldBeActive]) and the transition tracker
  * ([MirrorActivationTracker]) are pure and unit-tested; the only
  * Android part is [MirrorServiceControl], which performs the actual
@@ -39,6 +56,23 @@ object MirrorActivation {
      */
     fun shouldBeActive(snapshot: PlayerSnapshot): Boolean =
         snapshot.hasTrack
+
+    /**
+     * The mirror is wanted only while a car session is live as well.
+     *
+     * v1.0.18: a track loaded is not enough on its own. The service
+     * used to start whenever a track was loaded — including with no
+     * car anywhere — and its active media session, held by a
+     * foreground service, blocked the phone's wireless Android Auto
+     * connection (uninstalling the app made wireless connect again).
+     * The dashboard card is the mirror's only consumer, so without a
+     * car session there is nothing to mirror to; the service stays
+     * stopped and the session stays inactive until the car actually
+     * connects, and stopping on disconnect keeps the next connection
+     * clean.
+     */
+    fun shouldBeActive(snapshot: PlayerSnapshot, carConnected: Boolean): Boolean =
+        carConnected && shouldBeActive(snapshot)
 }
 
 /** What the activation tracker wants done: start the service, or stop it. */

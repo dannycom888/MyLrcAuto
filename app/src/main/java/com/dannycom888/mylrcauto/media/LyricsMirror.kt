@@ -137,14 +137,16 @@ internal interface MirrorStateSink {
  * `setPlaybackState` on every tick: the session went active in
  * `onCreate` before the first (async) render published any state, so
  * the host's dashboard card locked in its buttons from that first,
- * empty read and never re-derived them. The fix is to publish a
+ * empty read and never re-derived them. v1.0.17 tried activate-first
+ * with a synchronous publish right after, and the car still showed
+ * 10s — the first read at activation wins. The fix is to publish a
  * complete state — with the skip actions — synchronously from the
- * current snapshot right after the session goes active (see
+ * current snapshot BEFORE the session goes active (see
  * [LyricsMediaService]), and this function is the single publish path
- * both the initial publish and the render loop use. v1.0.15 published
- * before activation instead; that made a throwing first publish fatal
- * to the whole service, so v1.0.17 went back to activate-first with
- * the synchronous publish guarded.
+ * both the initial publish and the render loop use. v1.0.15 did
+ * publish before activation, but unguarded, so a throwing first
+ * publish was fatal to the whole service; v1.0.18 keeps the order
+ * and guards it.
  */
 internal fun publishMirrorState(
     sink: MirrorStateSink,
@@ -155,9 +157,14 @@ internal fun publishMirrorState(
 ): MirrorMetadataSignature? {
     val metadata = mirrorMetadata(snapshot, glance)
     val signature = metadata?.signature()
-    if (signature != lastSignature) {
-        sink.setMetadata(metadata)
-    }
+    // The playback state goes out FIRST, before the metadata. The
+    // card's buttons come from its actions, and the car reads them
+    // the moment the session goes active — so the actions must land
+    // even if the metadata publish throws (a bad bitmap takes the
+    // metadata down, and the old order let it take the buttons with
+    // it). A failed metadata publish leaves the signature
+    // un-updated, so the render loop re-sends it on the next
+    // emission; the actions are already in place either way.
     val playback = mirrorPlayback(snapshot, nowElapsed)
     sink.setPlaybackState(
         playback.state,
@@ -165,6 +172,9 @@ internal fun publishMirrorState(
         playback.speed,
         playback.actions.toFramework(),
     )
+    if (signature != lastSignature) {
+        sink.setMetadata(metadata)
+    }
     return signature
 }
 

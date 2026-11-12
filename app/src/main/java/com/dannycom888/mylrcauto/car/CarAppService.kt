@@ -36,14 +36,29 @@ class CarAppService : androidx.car.app.CarAppService() {
     }
 
     override fun onCreateSession(): Session {
+        // A car session is live from here: the mirror may run (see
+        // MirrorActivation — v1.0.18 gates it on a live car session,
+        // because a mirror running with no car present blocked the
+        // wireless Android Auto connection). The flag is set before
+        // anything else, so the snapshot hook's combined flow can
+        // start the service as soon as a track is loaded.
+        val app = applicationContext as MyLrcAutoApp
+        runCatching { app.container.setCarSessionLive(true) }
         // The car app is the foreground app from here, so starting the
         // mirror service is allowed — where the snapshot hook's
         // background start may have been blocked (v1.0.13). The screen
         // does the same when it is created; the two call sites cannot
         // double-start a running service.
-        val app = applicationContext as MyLrcAutoApp
-        startMirrorFromCarApp(app.container.media.snapshot.value) {
-            MirrorServiceControl.start(applicationContext)
+        //
+        // Guarded: session creation must never throw — a throw here
+        // takes the whole car app down at the moment the car opens
+        // it, and a mirror that fails to start is not worth that.
+        // The snapshot hook is the backstop: it starts the service
+        // as soon as the flag above is set and a track is loaded.
+        runCatching {
+            startMirrorFromCarApp(app.container.media.snapshot.value) {
+                MirrorServiceControl.start(applicationContext)
+            }
         }
         return CarSession()
     }

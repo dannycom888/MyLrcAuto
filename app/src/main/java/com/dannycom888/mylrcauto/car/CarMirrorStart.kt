@@ -26,6 +26,12 @@ import com.dannycom888.mylrcauto.media.PlayerSnapshot
  * Starting an already-running service is a no-op, so the two call
  * sites (and the hook) cannot double-start anything.
  *
+ * v1.0.18: these call sites are inside the car session (session
+ * creation, screen creation), so a car session is live whenever they
+ * run — the car gate in [MirrorActivation.shouldBeActive] is met by
+ * construction here. The snapshot hook is the one that needed the
+ * explicit gate, because it fires with no car anywhere.
+ *
  * Pure apart from the lambda the caller supplies, so the decision is
  * unit-testable without a Context.
  */

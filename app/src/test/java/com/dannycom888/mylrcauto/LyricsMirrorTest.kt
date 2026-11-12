@@ -321,6 +321,40 @@ class LyricsMirrorTest {
     }
 
     @Test
+    fun publishSendsPlaybackStateBeforeMetadata() {
+        // v1.0.18: the card's buttons come from the playback state's
+        // actions, and the car reads them the moment the session goes
+        // active — so the actions must be published before the
+        // metadata, and the service publishes the whole state before
+        // activating. A metadata-first order let a throwing metadata
+        // publish take the buttons down with it.
+        val sink = RecordingSink()
+        publishMirrorState(sink, playingSnapshot(), now, null, nowElapsed = 1_000L)
+        assertEquals(listOf("playback", "metadata"), sink.callOrder)
+    }
+
+    @Test
+    fun throwingMetadataStillLeavesPlaybackStatePublished() {
+        // A bad cover bitmap makes the metadata publish throw; the
+        // playback state — and with it the skip buttons — must already
+        // be out by then, and the throw must reach the caller so the
+        // signature is not recorded as published (the render loop
+        // re-sends the metadata on the next emission).
+        val sink = ThrowingMetadataSink()
+        var thrown: Throwable? = null
+        try {
+            publishMirrorState(sink, playingSnapshot(), now, null, nowElapsed = 1_000L)
+        } catch (e: Throwable) {
+            thrown = e
+        }
+        assertTrue(thrown is IllegalStateException)
+        assertEquals(1, sink.playbackStates.size)
+        val actions = sink.playbackStates.single().actions
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+    }
+
+    @Test
     fun publishSkipsMetadataWhenSignatureUnchanged() {
         // Playback state is re-sent on every call, but metadata only
         // when its signature changed — the subtitle must never be
@@ -375,17 +409,40 @@ class LyricsMirrorTest {
         val playbackStates = mutableListOf<PublishedPlayback>()
         val metadata = mutableListOf<MirrorMetadata?>()
 
+        /** "playback" or "metadata", in the order the sink was called. */
+        val callOrder = mutableListOf<String>()
+
         override fun setPlaybackState(
             state: MirrorPlaybackState,
             positionMs: Long,
             speed: Float,
             actions: Long,
         ) {
+            callOrder.add("playback")
             playbackStates.add(PublishedPlayback(state, positionMs, speed, actions))
         }
 
         override fun setMetadata(metadata: MirrorMetadata?) {
+            callOrder.add("metadata")
             this.metadata.add(metadata)
+        }
+    }
+
+    /** A sink whose metadata publish throws, like a bad cover bitmap. */
+    private class ThrowingMetadataSink : MirrorStateSink {
+        val playbackStates = mutableListOf<RecordingSink.PublishedPlayback>()
+
+        override fun setPlaybackState(
+            state: MirrorPlaybackState,
+            positionMs: Long,
+            speed: Float,
+            actions: Long,
+        ) {
+            playbackStates.add(RecordingSink.PublishedPlayback(state, positionMs, speed, actions))
+        }
+
+        override fun setMetadata(metadata: MirrorMetadata?) {
+            throw IllegalStateException("cannot parcel metadata")
         }
     }
 }
