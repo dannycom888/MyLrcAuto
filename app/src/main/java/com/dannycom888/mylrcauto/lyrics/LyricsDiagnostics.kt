@@ -138,6 +138,96 @@ fun rawTitleProbe(
     )
 }
 
+/** Which stored list one of the closest stored names came from (v1.0.24). */
+enum class StoredNameKind {
+    LRC,
+    AUDIO,
+}
+
+/** One stored file name shown beside a missed lookup: the name verbatim, and its list. */
+data class ClosestStoredName(
+    val fileName: String,
+    val kind: StoredNameKind,
+)
+
+/**
+ * The received title as space-separated uppercase hex codepoints,
+ * e.g. "4E0D 518D 72B9 8C6B" for 不再犹豫 (v1.0.24).
+ *
+ * The v1.0.23 trace narrowed the phone misses to a CODEPOINT-level
+ * difference between the reported title and the stored file names:
+ * the two strings render identically, so the Settings block showed
+ * nothing to compare. The codepoints make the invisible visible —
+ * one differing position names the exact character variant (a
+ * Traditional form the folding table does not know, a zero-width
+ * character, an unexpected padding codepoint). Code POINTS, not
+ * UTF-16 units, so a supplementary-plane character is one entry.
+ */
+fun titleCodepointsHex(title: String): String {
+    val out = StringBuilder()
+    var index = 0
+    while (index < title.length) {
+        val codePoint = title.codePointAt(index)
+        if (out.isNotEmpty()) out.append(' ')
+        out.append("%04X".format(codePoint))
+        index += Character.charCount(codePoint)
+    }
+    return out.toString()
+}
+
+/**
+ * Length of the longest common substring of [a] and [b] — the
+ * similarity measure behind [closestStoredFileNames]. Plain
+ * dynamic programming over UTF-16 chars; both inputs are short
+ * (a title, a file name), so the quadratic table is never a cost.
+ */
+fun longestCommonSubstringLength(a: String, b: String): Int {
+    if (a.isEmpty() || b.isEmpty()) return 0
+    var best = 0
+    var previous = IntArray(b.length + 1)
+    for (i in 1..a.length) {
+        val current = IntArray(b.length + 1)
+        for (j in 1..b.length) {
+            if (a[i - 1] == b[j - 1]) {
+                current[j] = previous[j - 1] + 1
+                if (current[j] > best) best = current[j]
+            }
+        }
+        previous = current
+    }
+    return best
+}
+
+/**
+ * Up to [limit] stored file names closest to the RAW reported
+ * title (v1.0.24): both lists ranked together by
+ * [longestCommonSubstringLength] against the title, descending;
+ * ties keep list order (`.lrc` entries before audio entries, then
+ * index order — the sort is stable). Names sharing not even one
+ * character with the title are excluded: they carry no comparison
+ * value. Like the raw probe this is deliberately UN-normalized —
+ * it exists to show the near-miss names VERBATIM next to the
+ * title's codepoints, so the exact differing character can be read
+ * off one screenshot when the script folding still misses.
+ */
+fun closestStoredFileNames(
+    rawTitle: String,
+    lrcFileNames: List<String>,
+    audioFileNames: List<String>,
+    limit: Int = 3,
+): List<ClosestStoredName> {
+    if (rawTitle.isEmpty() || limit <= 0) return emptyList()
+    val candidates =
+        lrcFileNames.map { ClosestStoredName(it, StoredNameKind.LRC) } +
+            audioFileNames.map { ClosestStoredName(it, StoredNameKind.AUDIO) }
+    return candidates
+        .map { name -> name to longestCommonSubstringLength(rawTitle, name.fileName) }
+        .filter { it.second > 0 }
+        .sortedByDescending { it.second }
+        .take(limit)
+        .map { it.first }
+}
+
 /** How one lookup ended. */
 enum class LookupOutcome {
     /** Step 1: the playing track's own audio file → its same-stem `.lrc`. */
@@ -203,6 +293,18 @@ data class LookupTrace(
     val rawProbeAudioCount: Int? = null,
     /** The step that produced the returned document; null when nothing was returned. */
     val matchStep: LookupMatchStep? = null,
+    /**
+     * The received [title] as hex codepoints (v1.0.24, see
+     * [titleCodepointsHex]); "" when the trace was built without
+     * one (the Settings row renders "—").
+     */
+    val titleCodepoints: String = "",
+    /**
+     * The stored file names closest to the raw title (v1.0.24, see
+     * [closestStoredFileNames]); empty when there was no index or
+     * the trace was built without them.
+     */
+    val closestNames: List<ClosestStoredName> = emptyList(),
 )
 
 /** `yyyy-MM-dd HH:mm:ss` in the device's locale/timezone — what the user reads in a screenshot. */
@@ -223,12 +325,14 @@ enum class LyricsDiagLabel {
     INDEX_DROPPED,
     LOOKUP_TIME,
     TRACK,
+    TITLE_CODEPOINTS,
     SOURCE,
     AUDIO_FOUND,
     SAME_STEM,
     TITLE_CHECK,
     FALLBACK_MATCHES,
     RAW_PROBE,
+    CLOSEST_NAMES,
     WINNER_FILE,
     MATCH_STEP,
     PARSED_LINES,
@@ -283,6 +387,10 @@ fun lyricsDiagRows(index: LyricsIndexDiag, lookup: LookupTrace?): List<LyricsDia
     )
     rows += LyricsDiagRow(LyricsDiagLabel.TRACK, DiagValue.Text(trackText))
     rows += LyricsDiagRow(
+        LyricsDiagLabel.TITLE_CODEPOINTS,
+        DiagValue.Text(lookup.titleCodepoints.ifEmpty { NO_VALUE }),
+    )
+    rows += LyricsDiagRow(
         LyricsDiagLabel.SOURCE,
         DiagValue.Text(lookup.sourcePackage.ifEmpty { NO_VALUE }),
     )
@@ -316,6 +424,28 @@ fun lyricsDiagRows(index: LyricsIndexDiag, lookup: LookupTrace?): List<LyricsDia
             },
         ),
     )
+    // v1.0.24: the closest stored names, verbatim, one row each —
+    // beside the title's codepoints they show the exact character
+    // a still-missing lookup differs by. The kind rides in the
+    // text as （音频）/（歌词）so the row needs no new value type.
+    if (lookup.closestNames.isEmpty()) {
+        rows += LyricsDiagRow(
+            LyricsDiagLabel.CLOSEST_NAMES,
+            DiagValue.Text(NO_VALUE),
+        )
+    } else {
+        for (name in lookup.closestNames) {
+            rows += LyricsDiagRow(
+                LyricsDiagLabel.CLOSEST_NAMES,
+                DiagValue.Text(
+                    name.fileName + when (name.kind) {
+                        StoredNameKind.AUDIO -> "（音频）"
+                        StoredNameKind.LRC -> "（歌词）"
+                    },
+                ),
+            )
+        }
+    }
     rows += LyricsDiagRow(
         LyricsDiagLabel.WINNER_FILE,
         DiagValue.Text(lookup.winnerFile ?: NO_VALUE),

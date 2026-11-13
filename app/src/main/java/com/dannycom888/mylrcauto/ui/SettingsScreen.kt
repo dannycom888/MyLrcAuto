@@ -210,12 +210,14 @@ private fun lyricsDiagLabelRes(label: LyricsDiagLabel): Int = when (label) {
     LyricsDiagLabel.INDEX_DROPPED -> R.string.settings_lrcdiag_index_dropped
     LyricsDiagLabel.LOOKUP_TIME -> R.string.settings_diag_time
     LyricsDiagLabel.TRACK -> R.string.settings_lrcdiag_track
+    LyricsDiagLabel.TITLE_CODEPOINTS -> R.string.settings_lrcdiag_codepoints
     LyricsDiagLabel.SOURCE -> R.string.settings_lrcdiag_source
     LyricsDiagLabel.AUDIO_FOUND -> R.string.settings_lrcdiag_audio_found
     LyricsDiagLabel.SAME_STEM -> R.string.settings_lrcdiag_same_stem
     LyricsDiagLabel.TITLE_CHECK -> R.string.settings_lrcdiag_title_check
     LyricsDiagLabel.FALLBACK_MATCHES -> R.string.settings_lrcdiag_fallback
     LyricsDiagLabel.RAW_PROBE -> R.string.settings_lrcdiag_probe
+    LyricsDiagLabel.CLOSEST_NAMES -> R.string.settings_lrcdiag_closest
     LyricsDiagLabel.WINNER_FILE -> R.string.settings_lrcdiag_winner
     LyricsDiagLabel.MATCH_STEP -> R.string.settings_lrcdiag_match_step
     LyricsDiagLabel.PARSED_LINES -> R.string.settings_lrcdiag_parsed_lines

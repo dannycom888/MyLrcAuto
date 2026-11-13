@@ -425,4 +425,150 @@ class LocalLyricsMatcherTest {
             LocalLyricsMatcher.matchLrc(files, "晴天", listOf("周杰伦"), 240_000L)?.fileName,
         )
     }
+
+    // ---- v1.0.24: script-insensitive normalize -------------------
+    //
+    // The v1.0.23 device trace (index Ready, 1,092 + 1,092, dropped
+    // 0, probe 0/0, NO_MATCH for "不再犹豫" — files the file manager
+    // shows as "Beyond - 不再犹豫.lrc/.mp3") narrowed the miss to a
+    // codepoint-level difference between the reported title and the
+    // stored names. The tests below pin the prime suspect class:
+    // Traditional vs Simplified variants on either side.
+
+    @Test
+    fun normalizeFoldsTraditionalToSimplified() {
+        assertEquals("不再犹豫", LocalLyricsMatcher.normalize("不再猶豫"))
+        assertEquals("邓丽君", LocalLyricsMatcher.normalize("鄧麗君"))
+        assertEquals("这个梦", LocalLyricsMatcher.normalize("這個夢"))
+        assertEquals("喜欢你", LocalLyricsMatcher.normalize("喜歡你"))
+        // Simplified input is unchanged by the folding.
+        assertEquals("不再犹豫", LocalLyricsMatcher.normalize("不再犹豫"))
+        assertTrue(LocalLyricsMatcher.traditionalFoldPairCount() > 400)
+    }
+
+    @Test
+    fun normalizeStripsZeroWidthCharacters() {
+        // ZWSP inside the title, a BOM at the head, ZWNJ/ZWJ between
+        // characters: all invisible, all fatal to an exact compare.
+        assertEquals("不再犹豫", LocalLyricsMatcher.normalize("不再\u200B犹豫"))
+        assertEquals("不再犹豫", LocalLyricsMatcher.normalize("\uFEFF不再犹豫"))
+        assertEquals("不再犹豫", LocalLyricsMatcher.normalize("不\u200C再\u200D犹豫"))
+        assertEquals("beyond", LocalLyricsMatcher.normalize("Bey\u200Bond"))
+    }
+
+    @Test
+    fun traditionalFileNamesMatchSimplifiedTag() {
+        // The v1.0.23 trace shape, with the Traditional variant as
+        // the codepoint difference: on v1.0.23 code this lookup
+        // NO_MATCHed (probe 0/0, audio found NO, fallback 0).
+        val lrcIndex = indexedLrc("Beyond - 不再猶豫.lrc", "Beyond - 喜歡你.lrc")
+        val audioIndex = indexedAudio("Beyond - 不再猶豫.mp3")
+
+        val audioFile = LocalLyricsMatcher.findAudioFile(
+            "不再犹豫", listOf("Beyond"), audioIndex,
+        )
+        assertEquals("Beyond - 不再猶豫.mp3", audioFile?.file?.fileName)
+        val sameStem = LocalLyricsMatcher.sameStemLrc(audioFile!!, lrcIndex)
+        assertEquals("Beyond - 不再猶豫.lrc", sameStem?.file?.fileName)
+        assertTrue(
+            LocalLyricsMatcher.lrcTitleMatches("Beyond - 不再猶豫.lrc", "不再犹豫"),
+        )
+        val matched = LocalLyricsMatcher.match("不再犹豫", listOf("Beyond"), lrcIndex)
+        assertEquals("Beyond - 不再猶豫.lrc", matched.firstOrNull()?.file?.fileName)
+    }
+
+    @Test
+    fun simplifiedFileNamesMatchTraditionalTag() {
+        // The mirror image: files Simplified, the player's tag
+        // Traditional — folding is on BOTH sides, so this hits too.
+        val lrcIndex = indexedLrc("Beyond - 不再犹豫.lrc")
+        val audioIndex = indexedAudio("Beyond - 不再犹豫.mp3")
+
+        val audioFile = LocalLyricsMatcher.findAudioFile(
+            "不再猶豫", listOf("Beyond"), audioIndex,
+        )
+        assertEquals("Beyond - 不再犹豫.mp3", audioFile?.file?.fileName)
+        val sameStem = LocalLyricsMatcher.sameStemLrc(audioFile!!, lrcIndex)
+        assertEquals("Beyond - 不再犹豫.lrc", sameStem?.file?.fileName)
+        assertTrue(
+            LocalLyricsMatcher.lrcTitleMatches("Beyond - 不再犹豫.lrc", "不再猶豫"),
+        )
+        val matched = LocalLyricsMatcher.match("不再猶豫", listOf("Beyond"), lrcIndex)
+        assertEquals("Beyond - 不再犹豫.lrc", matched.firstOrNull()?.file?.fileName)
+    }
+
+    @Test
+    fun traditionalArtistNameMatchesSimplifiedTag() {
+        // The artist side folds too: 鄧麗君's file, 邓丽君's tag.
+        val matched = LocalLyricsMatcher.match(
+            "月亮代表我的心", listOf("邓丽君"),
+            indexedLrc("鄧麗君 - 月亮代表我的心.lrc"),
+        )
+        assertEquals("鄧麗君 - 月亮代表我的心.lrc", matched.firstOrNull()?.file?.fileName)
+        // And the reverse direction.
+        val reverse = LocalLyricsMatcher.match(
+            "月亮代表我的心", listOf("鄧麗君"),
+            indexedLrc("邓丽君 - 月亮代表我的心.lrc"),
+        )
+        assertEquals("邓丽君 - 月亮代表我的心.lrc", reverse.firstOrNull()?.file?.fileName)
+    }
+
+    @Test
+    fun fullWidthTraditionalFileNameMatchesSimplifiedTag() {
+        // Full-width separator AND Traditional artist characters in
+        // the file name; the tag is half-width Simplified.
+        val matched = LocalLyricsMatcher.match(
+            "晴天", listOf("周杰伦"),
+            indexedLrc("周杰倫－晴天.lrc"),
+        )
+        assertEquals("周杰倫－晴天.lrc", matched.firstOrNull()?.file?.fileName)
+        // Full-width Latin in the file name folds as before.
+        assertEquals(
+            "abc123",
+            LocalLyricsMatcher.normalize("ＡＢＣ-123"),
+        )
+    }
+
+    @Test
+    fun zeroWidthInTagTitleStillMatches() {
+        // The player reports the title with an embedded zero-width
+        // space; the files are clean. After stripping, both lookup
+        // steps hit exactly as if the character were never there.
+        val audioFile = LocalLyricsMatcher.findAudioFile(
+            "不再\u200B犹豫", listOf("Beyond"),
+            indexedAudio("Beyond - 不再犹豫.mp3"),
+        )
+        assertEquals("Beyond - 不再犹豫.mp3", audioFile?.file?.fileName)
+        val matched = LocalLyricsMatcher.match(
+            "不再\u200B犹豫", listOf("Beyond"),
+            indexedLrc("Beyond - 不再犹豫.lrc"),
+        )
+        assertEquals("Beyond - 不再犹豫.lrc", matched.firstOrNull()?.file?.fileName)
+    }
+
+    @Test
+    fun scriptFoldingKeepsExactEqualityProtection() {
+        // The 爱/爱你 protection is an EQUALITY on folded forms, so
+        // folding cannot widen it into a substring match — in
+        // either script, in either direction.
+        assertTrue(
+            LocalLyricsMatcher.match(
+                "愛", listOf("周杰伦"),
+                indexedLrc("爱你.lrc"),
+            ).isEmpty(),
+        )
+        assertTrue(
+            LocalLyricsMatcher.match(
+                "爱", listOf("周杰伦"),
+                indexedLrc("愛你.lrc"),
+            ).isEmpty(),
+        )
+        assertFalse(LocalLyricsMatcher.lrcTitleMatches("愛你.lrc", "爱"))
+        // The positive case folds cleanly: 愛你 the tag, 爱你 the file.
+        val matched = LocalLyricsMatcher.match(
+            "愛你", listOf("王心凌"),
+            indexedLrc("王心凌 - 爱你.lrc"),
+        )
+        assertEquals("王心凌 - 爱你.lrc", matched.firstOrNull()?.file?.fileName)
+    }
 }

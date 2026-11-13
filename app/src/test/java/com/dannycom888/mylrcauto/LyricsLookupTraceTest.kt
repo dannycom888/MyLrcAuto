@@ -9,12 +9,14 @@ import com.dannycom888.mylrcauto.lyrics.LocalLyricsSource
 import com.dannycom888.mylrcauto.lyrics.LookupMatchStep
 import com.dannycom888.mylrcauto.lyrics.LookupOutcome
 import com.dannycom888.mylrcauto.lyrics.LyricsIndexState
+import com.dannycom888.mylrcauto.lyrics.StoredNameKind
 import com.dannycom888.mylrcauto.media.TrackInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -418,8 +420,86 @@ class LyricsLookupTraceTest {
     }
 
     @Test
-    fun indexDiagReportsTheWalksDroppedCount() {
-        // The dropped-row count from the walk that built the served
+    fun traditionalNamedIndexHitsSimplifiedTag() {
+        // v1.0.24: the v1.0.23 device-trace inputs (title 不再犹豫,
+        // artist Beyond, Poweramp) against an index whose entries
+        // are named in TRADITIONAL characters. On v1.0.23 code this
+        // fetch NO_MATCHed with the exact trace the user screenshotted
+        // (audio found NO, fallback 0, probe 0/0); with script
+        // folding inside normalize() the same-stem step hits.
+        val source = FakeSource(
+            lrcFiles = listOf(
+                LocalLrcFile("content://test/boy/Beyond - 不再猶豫.lrc", "Beyond - 不再猶豫.lrc"),
+                LocalLrcFile("content://test/boy/Beyond - 喜歡你.lrc", "Beyond - 喜歡你.lrc"),
+            ),
+            audioFiles = listOf(
+                LocalAudioFile("content://test/boy/Beyond - 不再猶豫.mp3", "Beyond - 不再猶豫.mp3"),
+            ),
+            bytesByName = mapOf("Beyond - 不再猶豫.lrc" to fixtureBytes()),
+        )
+        val provider = providerFor(source)
+
+        val document = runBlocking {
+            provider.fetch(
+                TrackInfo(
+                    title = "不再犹豫",
+                    artist = "Beyond",
+                    album = "",
+                    durationMs = 231_000L,
+                    packageName = "com.maxmpz.audioplayer",
+                ),
+            )
+        }
+        assertNotNull(document)
+
+        val trace = provider.lastLookup.value!!
+        assertEquals(true, trace.audioFileFound)
+        assertEquals("Beyond - 不再猶豫.lrc", trace.sameStemCandidate)
+        assertEquals(true, trace.titleCheckPassed)
+        assertEquals("Beyond - 不再猶豫.lrc", trace.winnerFile)
+        assertEquals(LookupOutcome.FOUND_SAME_STEM, trace.outcome)
+        assertEquals(LookupMatchStep.AUDIO_WITH_ARTIST, trace.matchStep)
+        // The raw probe stays RAW: the Traditional names do not
+        // contain the Simplified title verbatim — probe 0/0 WITH a
+        // hit is the folded-script signature, distinct from the
+        // v1.0.23 probe-0/0-with-a-miss shape.
+        assertEquals(0, trace.rawProbeLrcCount)
+        assertEquals(0, trace.rawProbeAudioCount)
+        // The v1.0.24 evidence rows: the title's codepoints, and
+        // the closest stored names verbatim with their kinds.
+        assertEquals("4E0D 518D 72B9 8C6B", trace.titleCodepoints)
+        assertEquals(
+            "Beyond - 不再猶豫.lrc",
+            trace.closestNames.firstOrNull()?.fileName,
+        )
+        assertEquals(StoredNameKind.LRC, trace.closestNames.firstOrNull()?.kind)
+        assertTrue(
+            trace.closestNames.any {
+                it.fileName == "Beyond - 不再猶豫.mp3" && it.kind == StoredNameKind.AUDIO
+            },
+        )
+    }
+
+    @Test
+    fun simplifiedNamedIndexHitsTraditionalTag() {
+        // The mirror direction through the whole provider: the
+        // index is Simplified (beyondSource), the tag Traditional.
+        val provider = providerFor(beyondSource())
+
+        val document = runBlocking {
+            provider.fetch("不再猶豫", listOf("Beyond"), 231_000L)
+        }
+        assertNotNull(document)
+
+        val trace = provider.lastLookup.value!!
+        assertEquals(true, trace.audioFileFound)
+        assertEquals("Beyond - 不再犹豫.lrc", trace.winnerFile)
+        assertEquals(LookupOutcome.FOUND_SAME_STEM, trace.outcome)
+        assertEquals("4E0D 518D 7336 8C6B", trace.titleCodepoints)
+    }
+
+    @Test
+    fun indexDiagReportsTheWalksDroppedCount() {        // The dropped-row count from the walk that built the served
         // index lands in the diagnostics block — on the device this
         // is the number that proves (or clears) the silent-drop
         // mechanism.

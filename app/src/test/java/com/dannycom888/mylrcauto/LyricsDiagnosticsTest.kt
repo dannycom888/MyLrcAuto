@@ -1,10 +1,15 @@
 package com.dannycom888.mylrcauto
 
 import com.dannycom888.mylrcauto.lyrics.DiagValue
+import com.dannycom888.mylrcauto.lyrics.ClosestStoredName
 import com.dannycom888.mylrcauto.lyrics.LookupMatchStep
 import com.dannycom888.mylrcauto.lyrics.LookupOutcome
 import com.dannycom888.mylrcauto.lyrics.LookupTrace
+import com.dannycom888.mylrcauto.lyrics.StoredNameKind
+import com.dannycom888.mylrcauto.lyrics.closestStoredFileNames
+import com.dannycom888.mylrcauto.lyrics.longestCommonSubstringLength
 import com.dannycom888.mylrcauto.lyrics.rawTitleProbe
+import com.dannycom888.mylrcauto.lyrics.titleCodepointsHex
 import com.dannycom888.mylrcauto.lyrics.LyricsDiagLabel
 import com.dannycom888.mylrcauto.lyrics.LyricsIndexDiag
 import com.dannycom888.mylrcauto.lyrics.LyricsIndexState
@@ -85,6 +90,11 @@ class LyricsDiagnosticsTest {
         rawProbeLrcCount: Int? = 1,
         rawProbeAudioCount: Int? = 1,
         matchStep: LookupMatchStep? = LookupMatchStep.AUDIO_WITH_ARTIST,
+        titleCodepoints: String = "4E0D 518D 72B9 8C6B",
+        closestNames: List<ClosestStoredName> = listOf(
+            ClosestStoredName("Beyond - 不再犹豫.lrc", StoredNameKind.LRC),
+            ClosestStoredName("Beyond - 不再犹豫.mp3", StoredNameKind.AUDIO),
+        ),
     ) = LookupTrace(
         timestampMs = 1_763_000_000_000L,
         title = "不再犹豫",
@@ -104,6 +114,8 @@ class LyricsDiagnosticsTest {
         rawProbeLrcCount = rawProbeLrcCount,
         rawProbeAudioCount = rawProbeAudioCount,
         matchStep = matchStep,
+        titleCodepoints = titleCodepoints,
+        closestNames = closestNames,
     )
 
     private fun rowsByLabel(
@@ -149,12 +161,15 @@ class LyricsDiagnosticsTest {
                 LyricsDiagLabel.INDEX_DROPPED,
                 LyricsDiagLabel.LOOKUP_TIME,
                 LyricsDiagLabel.TRACK,
+                LyricsDiagLabel.TITLE_CODEPOINTS,
                 LyricsDiagLabel.SOURCE,
                 LyricsDiagLabel.AUDIO_FOUND,
                 LyricsDiagLabel.SAME_STEM,
                 LyricsDiagLabel.TITLE_CHECK,
                 LyricsDiagLabel.FALLBACK_MATCHES,
                 LyricsDiagLabel.RAW_PROBE,
+                LyricsDiagLabel.CLOSEST_NAMES,
+                LyricsDiagLabel.CLOSEST_NAMES,
                 LyricsDiagLabel.WINNER_FILE,
                 LyricsDiagLabel.MATCH_STEP,
                 LyricsDiagLabel.PARSED_LINES,
@@ -175,6 +190,11 @@ class LyricsDiagnosticsTest {
         // The inputs are verbatim — this is how a wrong title or
         // artist from the player becomes visible in a screenshot.
         assertEquals(DiagValue.Text("不再犹豫 — Beyond"), byLabel[LyricsDiagLabel.TRACK])
+        // v1.0.24: the title's codepoints ride right under it.
+        assertEquals(
+            DiagValue.Text("4E0D 518D 72B9 8C6B"),
+            byLabel[LyricsDiagLabel.TITLE_CODEPOINTS],
+        )
         assertEquals(
             DiagValue.Text("com.maxmpz.audioplayer"),
             byLabel[LyricsDiagLabel.SOURCE],
@@ -192,6 +212,16 @@ class LyricsDiagnosticsTest {
         assertEquals(DiagValue.Text("845"), byLabel[LyricsDiagLabel.INDEX_AUDIO_COUNT])
         assertEquals(DiagValue.Text("0"), byLabel[LyricsDiagLabel.INDEX_DROPPED])
         assertEquals(DiagValue.Text("1/1"), byLabel[LyricsDiagLabel.RAW_PROBE])
+        // v1.0.24: one row per closest stored name, verbatim, kind
+        // marked in the text — .lrc first (the helper's order).
+        val closestRows = rows.filter { it.label == LyricsDiagLabel.CLOSEST_NAMES }
+        assertEquals(
+            listOf(
+                DiagValue.Text("Beyond - 不再犹豫.lrc（歌词）"),
+                DiagValue.Text("Beyond - 不再犹豫.mp3（音频）"),
+            ),
+            closestRows.map { it.value },
+        )
         assertEquals(
             DiagValue.MatchStep(LookupMatchStep.AUDIO_WITH_ARTIST),
             byLabel[LyricsDiagLabel.MATCH_STEP],
@@ -336,5 +366,100 @@ class LyricsDiagnosticsTest {
         )
         assertEquals(0, probe.lrcCount)
         assertEquals(0, probe.audioCount)
+    }
+
+    // ---- v1.0.24: codepoints + closest stored names --------------
+
+    @Test
+    fun titleCodepointsHexFormatsUppercasePaddedHex() {
+        // The example from the spec: 不再犹豫.
+        assertEquals("4E0D 518D 72B9 8C6B", titleCodepointsHex("不再犹豫"))
+        // The Traditional variant differs at exactly one position —
+        // 7336 （猶） vs 72B9 （犹） — which is the whole point of
+        // showing this row: the differing slot names the variant.
+        assertEquals("4E0D 518D 7336 8C6B", titleCodepointsHex("不再猶豫"))
+        // ASCII is padded to four digits; empty stays empty.
+        assertEquals("0042 0065 0079 006F 006E 0064", titleCodepointsHex("Beyond"))
+        assertEquals("", titleCodepointsHex(""))
+    }
+
+    @Test
+    fun longestCommonSubstringCountsTheLongestRun() {
+        assertEquals(4, longestCommonSubstringLength("不再犹豫", "Beyond - 不再犹豫.lrc"))
+        // Traditional file name vs Simplified title: only "不再"
+        // runs — the script difference breaks the substring there.
+        assertEquals(2, longestCommonSubstringLength("不再犹豫", "Beyond - 不再猶豫.lrc"))
+        assertEquals(0, longestCommonSubstringLength("不再犹豫", "海阔天空.mp3"))
+        assertEquals(0, longestCommonSubstringLength("", "不再犹豫.lrc"))
+        assertEquals(0, longestCommonSubstringLength("不再犹豫", ""))
+    }
+
+    @Test
+    fun closestStoredFileNamesRankByLongestCommonSubstring() {
+        val closest = closestStoredFileNames(
+            rawTitle = "不再犹豫",
+            lrcFileNames = listOf(
+                "Beyond - 不再猶豫.lrc",
+                "不再犹豫 (Live).lrc",
+                "汪峰 - 北京北京.lrc",
+            ),
+            audioFileNames = listOf(
+                "Beyond - 不再猶豫.mp3",
+                "海阔天空.mp3",
+            ),
+        )
+        // The verbatim name (4) first; the Traditional pair (2)
+        // next, .lrc before audio on the tie; names sharing no
+        // character with the title are excluded entirely.
+        assertEquals(
+            listOf(
+                ClosestStoredName("不再犹豫 (Live).lrc", StoredNameKind.LRC),
+                ClosestStoredName("Beyond - 不再猶豫.lrc", StoredNameKind.LRC),
+                ClosestStoredName("Beyond - 不再猶豫.mp3", StoredNameKind.AUDIO),
+            ),
+            closest,
+        )
+    }
+
+    @Test
+    fun closestStoredFileNamesRespectLimitAndEmptyTitle() {
+        val names = (1..6).map { "不再犹豫 $it.lrc" }
+        assertEquals(3, closestStoredFileNames("不再犹豫", names, emptyList()).size)
+        assertEquals(
+            2,
+            closestStoredFileNames("不再犹豫", names, emptyList(), limit = 2).size,
+        )
+        assertTrue(closestStoredFileNames("", names, emptyList()).isEmpty())
+        assertTrue(
+            closestStoredFileNames("不再犹豫", listOf("海阔天空.lrc"), emptyList()).isEmpty(),
+        )
+    }
+
+    @Test
+    fun rawProbeStaysRawAcrossScripts() {
+        // The probe is deliberately NOT folded: a Traditional file
+        // name does not contain the Simplified title verbatim, so
+        // the probe reads 0/0 even though v1.0.24's matcher now
+        // finds the file. Probe 0/0 + a HIT is the new signature of
+        // "script variant, folded"; probe 0/0 + a MISS keeps its
+        // v1.0.23 meaning and the closest-names row shows why.
+        val probe = rawTitleProbe(
+            rawTitle = "不再犹豫",
+            lrcFileNames = listOf("Beyond - 不再猶豫.lrc"),
+            audioFileNames = listOf("Beyond - 不再猶豫.mp3"),
+        )
+        assertEquals(0, probe.lrcCount)
+        assertEquals(0, probe.audioCount)
+    }
+
+    @Test
+    fun rowsWithoutClosestNamesShowOneDashRow() {
+        val rows = lyricsDiagRows(
+            LyricsIndexDiag(LyricsIndexState.READY, 1092),
+            trace(LookupOutcome.NOT_FOUND, closestNames = emptyList()),
+        )
+        val closestRows = rows.filter { it.label == LyricsDiagLabel.CLOSEST_NAMES }
+        assertEquals(1, closestRows.size)
+        assertEquals(DiagValue.Text("—"), closestRows.single().value)
     }
 }

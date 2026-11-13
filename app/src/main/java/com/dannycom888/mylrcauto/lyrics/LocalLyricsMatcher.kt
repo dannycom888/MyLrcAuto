@@ -15,8 +15,10 @@ import java.nio.charset.CodingErrorAction
  * 2. `"Title.lrc"`.
  *
  * Matching is done on a normalized form: full-width characters are folded to
- * half-width, the text is lower-cased, and every character that is not a letter
- * or digit is dropped, so `"周杰伦 - 晴天.lrc"`, `"周杰伦-晴天.lrc"` and
+ * half-width, Traditional characters are folded to Simplified and zero-width
+ * characters are stripped (v1.0.24, see [normalize]), the text is lower-cased,
+ * and every character that is not a letter or digit is dropped, so
+ * `"周杰伦 - 晴天.lrc"`, `"周杰伦-晴天.lrc"` and
  * `"周杰伦 晴天.lrc"` all match the same track. Parenthesised or bracketed
  * version suffixes in the file name (for example `"晴天 (Live).lrc"`) are also
  * tried stripped, so they still match the plain title.
@@ -36,6 +38,18 @@ import java.nio.charset.CodingErrorAction
  *
  * This object is pure Kotlin with no Android dependency so the rules are
  * directly unit-testable on the JVM.
+ *
+ * Since v1.0.24, [normalize] also folds Traditional Chinese characters
+ * to Simplified (see [TRADITIONAL_TO_SIMPLIFIED_PAIRS]) and strips
+ * zero-width characters: the v1.0.23 device trace proved the received
+ * title and the stored file names can differ at codepoint level
+ * (Simplified tag vs Traditional file name, or vice versa) while
+ * looking identical — every normalized comparison now happens in
+ * Simplified space on BOTH sides, so script variants of the same
+ * title/artist compare equal. The folding lives inside [normalize]
+ * itself, so every existing call site (index keys, track keys, file
+ * stems, the title guard) inherits it without changing any other
+ * matching semantics.
  */
 object LocalLyricsMatcher {
 
@@ -50,6 +64,77 @@ object LocalLyricsMatcher {
         val file: LocalAudioFile,
         val normalizedStem: String,
     )
+
+    /**
+     * Curated Traditional → Simplified character pairs, written as
+     * one flat string of (traditional, simplified) character pairs
+     * and read two characters at a time into
+     * [TRADITIONAL_TO_SIMPLIFIED].
+     *
+     * Coverage is deliberately a COMMON-CHARACTER subset (a few
+     * hundred pairs: everyday vocabulary plus characters common in
+     * Chinese song titles and artist names), NOT a complete
+     * Traditional→Simplified conversion table: a character outside
+     * the table folds to itself, so an unlisted Traditional variant
+     * in a file name still misses a Simplified tag (and the Settings
+     * diagnostics now show the codepoints and the closest stored
+     * names when that happens). One-to-one pairs only, except for a
+     * few many-to-one folds that are unambiguous for matching
+     * （發/髮→发， 乾 is intentionally NOT included — it is also a
+     * surname reading gān). Identity pairs are omitted.
+     */
+    private val TRADITIONAL_TO_SIMPLIFIED_PAIRS: String =
+        "萬万與与專专業业東东丟丢兩两嚴严個个豐丰臨临為为麗丽舉举麼么義义烏乌樂乐喬乔" +
+        "習习鄉乡書书買买亂乱亞亚產产親亲億亿僅仅僕仆償偿優优兒儿兌兑內内關关興兴農农" +
+        "準准凱凯刪删劉刘則则剛刚創创劃划劇剧勵励動动務务勝胜勞劳勢势勻匀區区醫医華华" +
+        "協协單单賣卖盧卢衛卫廠厂卻却歷历壓压厭厌參参雙双發发髮发號号嘆叹國国圍围園园" +
+        "圖图團团壞坏塊块堅坚壇坛壘垒墳坟墜坠牆墙壯壮聲声處处備备夠够夢梦頭头奪夺奮奋" +
+        "妝妆婦妇媽妈孫孙學学寧宁寶宝實实寵宠審审寫写寬宽對对尋寻導导屆届屬属歲岁島岛" +
+        "嶺岭幣币師师帳帐帶带幫帮廣广廟庙廢废開开閒闲閑闲間间閱阅閣阁陽阳陰阴陣阵陸陆" +
+        "陳陈隊队階阶際际隨随險险隱隐雖虽雜杂雞鸡離离難难雲云電电霧雾靈灵靜静頂顶順顺" +
+        "須须頌颂預预領领頰颊題题額额顏颜願愿顛颠類类風风飛飞飯饭飲饮餓饿館馆體体鬥斗" +
+        "鬱郁鮮鲜鳥鸟鳴鸣龍龙龜龟來来們们這这時时還还過过進进遠远邊边點点後后裡里長长" +
+        "門门問问見见視视觀观話话說说誰谁語语請请講讲謝谢謊谎貝贝負负財财貢贡貧贫貨货" +
+        "販贩貪贪貴贵貸贷費费資资賞赏賜赐質质賬账購购趕赶趙赵趨趋跡迹踐践車车軍军軟软" +
+        "輕轻輝辉輪轮輯辑輸输轉转轟轰辭辞邁迈遷迁選选遺遗鄧邓鄭郑釋释鐘钟鍾钟鋼钢錢钱" +
+        "錦锦鏡镜鐵铁鑄铸鑰钥鑽钻銀银銅铜銳锐銷销鋪铺錄录錫锡鍵键鍛锻鎮镇閃闪閉闭閏闰" +
+        "闊阔闖闯頁页項项顧顾顯显飾饰餘余驅驱驗验驚惊驛驿騎骑騰腾騷骚騙骗魚鱼魯鲁鴨鸭" +
+        "鴻鸿鵝鹅鶯莺鷹鹰鹽盐麥麦黃黄黨党齊齐齒齿龔龚懷怀戀恋愛爱淚泪聽听肅肃聯联聰聪" +
+        "職职臉脸舊旧艱艰艷艳節节範范簡简簽签籃篮筆笔築筑糾纠紀纪約约紅红級级純纯納纳" +
+        "紐纽紋纹紛纷紡纺紮扎紳绅細细組组終终絆绊絃弦結结絕绝絞绞絡络給给絢绚統统絲丝" +
+        "經经綢绸維维綴缀綵彩綸伦綺绮綻绽綿绵緒绪緘缄緙缂線线緝缉緞缎締缔練练緯纬緻致" +
+        "緹缇緲缈縈萦縉缙縊缢縐绉縑缣縕缊縛缚縟缛縞缟縣县縫缝縮缩縱纵縴纤縵缦縷缕縹缥" +
+        "總总績绩繃绷繅缫繆缪織织繕缮繚缭繞绕繡绣繢缋繩绳繪绘繭茧繹绎繼继繽缤續续" +
+        "纏缠纓缨纘缵纖纤纜缆編编緩缓緊紧緬缅變变讓让護护讀读識识譯译證证評评詞词試试" +
+        "詩诗誠诚認认誤误誘诱誦诵課课調调談谈論论諮咨諺谚謀谋謎谜謠谣謹谨謬谬諾诺諸诸" +
+        "現现場场規规覺觉覽览訂订計计誕诞樹树葉叶楓枫櫻樱蘋苹檸柠嗎吗猶犹倫伦張张譚谭" +
+        "詠咏榮荣楊杨許许蘇苏吳吴慶庆恆恒羅罗嶽岳賢贤曉晓憶忆蓮莲韓韩滿满駒驹貫贯裝装" +
+        "週周著着歡欢"
+
+    /** The folding table built from [TRADITIONAL_TO_SIMPLIFIED_PAIRS]. */
+    private val TRADITIONAL_TO_SIMPLIFIED: Map<Char, Char> = buildMap {
+        var i = 0
+        while (i + 1 < TRADITIONAL_TO_SIMPLIFIED_PAIRS.length) {
+            put(TRADITIONAL_TO_SIMPLIFIED_PAIRS[i], TRADITIONAL_TO_SIMPLIFIED_PAIRS[i + 1])
+            i += 2
+        }
+    }
+
+    /** How many Traditional → Simplified pairs the folding table carries. */
+    fun traditionalFoldPairCount(): Int = TRADITIONAL_TO_SIMPLIFIED.size
+
+    /** Folds one character Traditional → Simplified when the table knows it; identity otherwise. */
+    fun foldTraditional(char: Char): Char = TRADITIONAL_TO_SIMPLIFIED[char] ?: char
+
+    /**
+     * Zero-width characters stripped by [normalize]: U+200B ZERO
+     * WIDTH SPACE, U+200C ZERO WIDTH NON-JOINER, U+200D ZERO WIDTH
+     * JOINER and U+FEFF (the byte-order mark / zero-width no-break
+     * space). A tag editor or a copy-paste can plant any of them
+     * inside a title; they are invisible in every UI, so a title
+     * carrying one can never equal the same title without it.
+     */
+    private val ZERO_WIDTH_CHARS = setOf('\u200B', '\u200C', '\u200D', '\uFEFF')
 
     /**
      * Folds full-width ASCII and the full-width space to half-width. This is
@@ -73,12 +158,18 @@ object LocalLyricsMatcher {
 
     /**
      * Normalizes one string for comparison: full-width characters are folded
-     * to half-width, the text is lower-cased, and everything that is not a
-     * letter or digit is removed.
+     * to half-width, Traditional Chinese characters are folded to Simplified
+     * ([foldTraditional]), zero-width characters are stripped, the text is
+     * lower-cased, and everything that is not a letter or digit is removed.
+     * All matching in this object compares normalized forms, so folding here
+     * — and only here — makes every comparison script-insensitive on both
+     * sides (index keys and query inputs alike).
      */
     fun normalize(value: String): String {
         val folded = StringBuilder(value.length)
-        for (char in foldFullWidth(value)) {
+        for (rawChar in foldFullWidth(value)) {
+            if (rawChar in ZERO_WIDTH_CHARS) continue
+            val char = foldTraditional(rawChar)
             if (char.isLetterOrDigit()) {
                 folded.append(char.lowercaseChar())
             }

@@ -35,7 +35,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * When no audio file is found, or the audio file has no same-stem `.lrc`,
  * matching falls back to the `.lrc` file names:
  * `"Artist - Title.lrc"` is preferred, `"Title.lrc"` is the fallback; both
- * are normalized (case, spacing and punctuation are ignored), and when the
+ * are normalized (case, spacing and punctuation are ignored; since
+ * v1.0.24 normalization also folds Traditional characters to
+ * Simplified and strips zero-width characters, so a Simplified tag
+ * matches a Traditional file name and vice versa), and when the
  * name keys match nothing, an exact title-part match is accepted as a last
  * resort regardless of the file's artist part. When several files match, the
  * one whose last lyric timestamp is closest to the track duration wins.
@@ -257,6 +260,19 @@ class LocalLyricsProvider(
                     audioFileNames = it.audio.map { entry -> entry.file.fileName },
                 )
             }
+            // v1.0.24: the codepoint-level evidence. The probe can
+            // be 0/0 for names that differ from the title only by
+            // character variant (Traditional vs Simplified) or an
+            // invisible character — the codepoints and the closest
+            // stored names, both verbatim, are what separate that
+            // from a genuinely absent entry on the next screenshot.
+            val closest = index?.let {
+                closestStoredFileNames(
+                    rawTitle = title,
+                    lrcFileNames = it.lrc.map { entry -> entry.file.fileName },
+                    audioFileNames = it.audio.map { entry -> entry.file.fileName },
+                )
+            } ?: emptyList()
             return LookupTrace(
                 timestampMs = startedAtMs,
                 title = title,
@@ -276,6 +292,8 @@ class LocalLyricsProvider(
                 rawProbeLrcCount = probe?.lrcCount,
                 rawProbeAudioCount = probe?.audioCount,
                 matchStep = matchStep,
+                titleCodepoints = titleCodepointsHex(title),
+                closestNames = closest,
             )
         }
 
