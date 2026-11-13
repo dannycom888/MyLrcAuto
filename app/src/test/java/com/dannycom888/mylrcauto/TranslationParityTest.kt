@@ -1,6 +1,7 @@
 package com.dannycom888.mylrcauto
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.io.File
 
@@ -16,6 +17,22 @@ class TranslationParityTest {
 
     private fun stringNames(file: File): Set<String> =
         nameRegex.findAll(file.readText()).map { it.groupValues[1] }.toSet()
+
+    @Test
+    fun carFailedStringsAreGone() {
+        // v1.0.19: the big screen must show no prompt at all — the
+        // "出了点问题" error strings are deleted, and the catch in
+        // onGetTemplate returns a neutral loading pane instead.
+        for (file in listOf(
+            File("src/main/res/values/strings.xml"),
+            File("src/main/res/values-zh/strings.xml"),
+        )) {
+            assertFalse(
+                "car_failed still present in $file",
+                "car_failed" in file.readText(),
+            )
+        }
+    }
 
     @Test
     fun stringsXmlAndStringsZhXmlHaveSameNames() {

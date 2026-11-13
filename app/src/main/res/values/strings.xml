@@ -50,8 +50,6 @@
     <string name="car_permission_body">Grant notification access on your phone so the app can see what is playing.</string>
     <string name="car_untimed">These lyrics have no timings</string>
     <string name="car_untimed_body">This .lrc file has no time tags, so there is nothing to sync.</string>
-    <string name="car_failed">Something went wrong</string>
-    <string name="car_failed_body">Please try again.</string>
     <string name="car_next">Next: %1$s</string>
     <string name="car_instrumental">(instrumental)</string>
     <string name="car_play">Play</string>

@@ -7,6 +7,7 @@ import com.dannycom888.mylrcauto.media.MirrorStartResult
 import com.dannycom888.mylrcauto.media.PlayerSnapshot
 import com.dannycom888.mylrcauto.media.PlaybackPosition
 import com.dannycom888.mylrcauto.media.TrackInfo
+import com.dannycom888.mylrcauto.media.shouldActivateMirror
 import com.dannycom888.mylrcauto.media.startMirrorWithFallback
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,6 +50,33 @@ class MirrorActivationTest {
             sourcePackage = track?.packageName,
             sourceLabel = "Poweramp",
         )
+
+    @Test
+    fun emptySnapshotDoesNotActivateTheMirrorSession() {
+        // v1.0.19: activating the MediaSession with an empty snapshot
+        // hands the car an empty action set, and this car locks the
+        // card buttons from its first read and never re-derives them —
+        // the card would show 10s rewind/fast-forward forever. The
+        // session must stay inactive until a track is loaded.
+        assertFalse(shouldActivateMirror(sessionActive = false, snapshot = PlayerSnapshot()))
+        assertFalse(
+            shouldActivateMirror(
+                sessionActive = false,
+                snapshot = snapshot(isPlaying = true, track = null),
+            ),
+        )
+    }
+
+    @Test
+    fun loadedSnapshotActivatesTheMirrorSessionOnce() {
+        assertTrue(
+            shouldActivateMirror(sessionActive = false, snapshot = snapshot(isPlaying = true)),
+        )
+        // Already active: no second activation.
+        assertFalse(
+            shouldActivateMirror(sessionActive = true, snapshot = snapshot(isPlaying = true)),
+        )
+    }
 
     @Test
     fun playingTrackWantsTheMirror() {

@@ -34,12 +34,14 @@ class SettingsTest {
     }
 
     @Test
-    fun defaultSizeKeepsTheOriginalHardcodedSizes() {
-        // 17 sp was the hardcoded base size: current line 22 sp, line
-        // heights 30 / 24 sp. The default must draw exactly as before.
+    fun defaultSizeUsesTheTighterLineHeights() {
+        // 17 sp is the default base size: current line 22 sp, line
+        // heights 28 / 22 sp. v1.0.19 tightened the spacing (+11 / +5,
+        // down from +13 / +7) so more lines fit; the sizes themselves
+        // did not change.
         assertEquals(22, LyricsTextSize.currentSizeSp(17))
-        assertEquals(30, LyricsTextSize.currentLineHeightSp(17))
-        assertEquals(24, LyricsTextSize.lineHeightSp(17))
+        assertEquals(28, LyricsTextSize.currentLineHeightSp(17))
+        assertEquals(22, LyricsTextSize.lineHeightSp(17))
     }
 
     @Test
@@ -55,10 +57,10 @@ class SettingsTest {
     @Test
     fun sizeDerivationScalesWithBase() {
         assertEquals(19, LyricsTextSize.currentSizeSp(14))
-        assertEquals(27, LyricsTextSize.currentLineHeightSp(14))
-        assertEquals(21, LyricsTextSize.lineHeightSp(14))
+        assertEquals(25, LyricsTextSize.currentLineHeightSp(14))
+        assertEquals(19, LyricsTextSize.lineHeightSp(14))
         assertEquals(37, LyricsTextSize.currentSizeSp(32))
-        assertEquals(45, LyricsTextSize.currentLineHeightSp(32))
-        assertEquals(39, LyricsTextSize.lineHeightSp(32))
+        assertEquals(43, LyricsTextSize.currentLineHeightSp(32))
+        assertEquals(37, LyricsTextSize.lineHeightSp(32))
     }
 }

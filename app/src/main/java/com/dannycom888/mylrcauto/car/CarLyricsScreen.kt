@@ -149,15 +149,21 @@ class CarLyricsScreen(
         //
         // Guarded: a template that throws takes the whole car app down with
         // the host's "unexpected error" dialog, and a bad bitmap or a bad
-        // line is not worth that. A minimal message is a complete answer;
-        // the next tick recomposes and replaces it.
+        // line is not worth that. The answer is a neutral loading pane —
+        // loading state only, no error text: the big screen must never show
+        // any prompt at all, and a template-build failure is a momentary
+        // state the next tick recomposes away, not something to announce.
+        // The next tick recomposes and replaces it.
         return try {
             val content = compose()
             shown = content
             content.toTemplate()
         } catch (e: Exception) {
-            Log.w(TAG, "template build failed, showing a message instead", e)
-            message(R.string.car_failed, R.string.car_failed_body)
+            Log.w(TAG, "template build failed, showing a loading pane instead", e)
+            PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
+                .setTitle(carContext.getString(R.string.app_name))
+                .setHeaderAction(Action.BACK)
+                .build()
         }
     }
 
@@ -193,6 +199,7 @@ class CarLyricsScreen(
                 surfaceWidthDp = surface.surfaceWidthDp.value,
                 visibleAreaEmpty = surface.visibleArea.value?.isEmpty == true,
                 screenStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+                visibleAreaReported = surface.visibleArea.value != null,
             ) == TemplateChoice.ON_SURFACE,
         )
     }

@@ -1,6 +1,7 @@
 package com.dannycom888.mylrcauto.car
 
 import android.content.Intent
+import android.util.Log
 import androidx.car.app.AppManager
 import androidx.car.app.Screen
 import androidx.car.app.Session
@@ -17,6 +18,17 @@ import com.dannycom888.mylrcauto.media.MirrorServiceControl
 /**
  * One connection to a car, for as long as it lasts.
  *
+ * [mirrorAlreadyActive] is the item-7 diagnostic (v1.0.19): whether
+ * the mirror media session was already active before this session
+ * was created — read in [CarAppService.onCreateSession] before the
+ * mirror is started, so it cannot be this launch's own start. A
+ * card tap can only happen while the card is already showing, which
+ * needs an active mirror session; a cold icon tap never has one.
+ * It is logged in [onCreateScreen], not acted on: the library gives
+ * no reliable way to finish an icon launch without also killing
+ * the card (see [describeLaunchIntent]), so v1.0.19 records the
+ * facts for the follow-up instead of guessing.
+ *
  * One thing happens here that the phone's activity normally does, because a
  * car screen can be the *only* thing that ever opens this app — plug the
  * phone in on the way to work and no window of ours is ever created:
@@ -30,7 +42,9 @@ import com.dannycom888.mylrcauto.media.MirrorServiceControl
  * the UI on the car screen should exist for exactly as long as the car is
  * connected.
  */
-class CarSession : Session(), SavedStateRegistryOwner {
+class CarSession(
+    private val mirrorAlreadyActive: Boolean = false,
+) : Session(), SavedStateRegistryOwner {
 
     private val savedState = SavedStateRegistryController.create(this)
 
@@ -54,6 +68,19 @@ class CarSession : Session(), SavedStateRegistryOwner {
 
     override fun onCreateScreen(intent: Intent): Screen {
         val app = container
+
+        // Item-7 diagnostic (v1.0.19): what the host launched us with,
+        // and whether the mirror was already active — the two facts
+        // the follow-up needs to tell an icon tap from a card tap.
+        // Logged, not acted on: the library gives no reliable way to
+        // finish an icon launch without also killing the card (see
+        // describeLaunchIntent), so this version records the facts
+        // instead of guessing.
+        Log.i(
+            TAG,
+            describeLaunchIntent(intent.action, intent.categories, intent.extras?.keySet()) +
+                " mirrorAlreadyActive=$mirrorAlreadyActive",
+        )
 
         // The car session is live (also set in onCreateSession — this
         // is the backstop for a session created any other way). The
@@ -84,6 +111,10 @@ class CarSession : Session(), SavedStateRegistryOwner {
                 // wirelessly. The snapshot hook's combined flow fires
                 // the same STOP when the flag flips, but this direct
                 // stop does not depend on that flow being collected.
+                // Logged for the item-7 follow-up: a session destroyed
+                // right after an icon launch is what would kill the
+                // card if that launch were finished.
+                Log.i(TAG, "car session destroyed, stopping the mirror")
                 app.setCarSessionLive(false)
                 MirrorServiceControl.stop(carContext.applicationContext)
             }
@@ -109,12 +140,28 @@ class CarSession : Session(), SavedStateRegistryOwner {
         return CarLyricsScreen(carContext, app, surface)
     }
 
-    // No onNewIntent override: there is nothing to do with a new intent —
-    // the single lyrics screen is the whole app, and the tick loop in
-    // CarLyricsScreen already re-reads the playing track.
-    //
+    override fun onNewIntent(intent: Intent) {
+        // Item-7 diagnostic (v1.0.19): a new intent for a session
+        // that already exists — e.g. the icon tapped again while the
+        // app is running, or the card tapped while the session is
+        // alive. Logged with the same description as onCreateScreen,
+        // so the follow-up can see whether the two launch sources
+        // ever arrive with different intents. No behaviour change:
+        // the single lyrics screen is the whole app, and the tick
+        // loop already re-reads the playing track.
+        Log.i(
+            TAG,
+            "new intent for live session: " +
+                describeLaunchIntent(intent.action, intent.categories, intent.extras?.keySet()),
+        )
+    }
+
     // No media.stop() on destroy either, deliberately: the media repository
     // is shared with the phone, and a car session ending must not stop the
     // phone tracking playback. The surface releases itself through the
     // session lifecycle observer registered in CarSurface.
+
+    private companion object {
+        const val TAG = "MyLrcAutoCarSession"
+    }
 }

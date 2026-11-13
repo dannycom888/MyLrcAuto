@@ -8,6 +8,7 @@ composeBom = "2025.12.01"
 coroutines = "1.10.2"
 documentfile = "1.0.1"
 carApp = "1.7.0"
+media = "1.7.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -21,6 +22,7 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 androidx-car-app = { group = "androidx.car.app", name = "app", version.ref = "carApp" }
+androidx-media = { group = "androidx.media", name = "media", version.ref = "media" }
 junit = { group = "junit", name = "junit", version = "4.13.2" }
 
 [plugins]

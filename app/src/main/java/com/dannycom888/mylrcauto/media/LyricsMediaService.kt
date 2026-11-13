@@ -2,14 +2,14 @@ package com.dannycom888.mylrcauto.media
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.media.MediaMetadata
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
 import android.os.Bundle
-import android.service.media.MediaBrowserService
+import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
-import android.media.browse.MediaBrowser
 import androidx.core.app.NotificationCompat
+import androidx.media.MediaBrowserServiceCompat
 import com.dannycom888.mylrcauto.MyLrcAutoApp
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.car.CarGlance
@@ -18,8 +18,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.jvm.Volatile
 
 /**
  * The mirror media session, as the car sees it.
@@ -39,17 +42,37 @@ import kotlinx.coroutines.launch
  * already ignores this app's own sessions when choosing what to
  * follow, so the mirror can never follow itself.
  *
- * Activation: the session is made active in [onCreate] and stays so
- * while this service lives; what the host shows is driven by the
- * published state — playing/paused with a track, [PlaybackState.STATE_NONE]
- * with no track. The service is started by the app itself, not by the
- * car host: the app starts it the moment a track is loaded and stops
- * it when there is no track (see [MirrorActivation]
- * and the AppContainer wiring), because the user's flow is Poweramp
- * selected, then tap the app — and tapping the app opens the
- * CarAppService template, never this service, so waiting for the host
- * to bind it would leave the card on Poweramp's session forever.
- * No picker selection is needed, and none is asked for.
+ * This is the AALyrics shape: [MediaBrowserServiceCompat] with a
+ * [MediaSessionCompat], active first and published after, collectors
+ * plus a 250ms tick re-publishing the playback state unconditionally
+ * and the metadata only when its signature changes. The pure publish
+ * logic lives in [LyricsMirror] and is unchanged — only this sink
+ * and service were swapped to the Compat classes, because the
+ * framework `MediaSession` is what the car reads the buttons from
+ * and the Compat session is the one AALyrics' working card uses.
+ *
+ * Activation: the session goes active only once a track is loaded —
+ * never with an empty snapshot. The car locks the card buttons from
+ * its first read of the session and never re-derives them, and the
+ * first publish can happen while the snapshot is still empty (no
+ * track → empty action set → the car locks 10s forever). v1.0.18
+ * published the complete state before activation, guarded — and the
+ * car still showed 10s, because the snapshot was empty at that
+ * first publish. So this version gates activation itself on a track:
+ * with one, the session goes active first (AALyrics order — a
+ * publish must never block activation, so the first publish is
+ * guarded) and the complete state is published right after; without
+ * one, the session stays inactive and the render loop activates it
+ * the moment a track arrives — publish the complete state, then set
+ * active — so the car's first read sees the skip actions.
+ * The service is started by the app itself, not by the car host: the
+ * app starts it the moment a track is loaded and stops it when there
+ * is no track (see [MirrorActivation] and the AppContainer wiring),
+ * because the user's flow is Poweramp selected, then tap the app —
+ * and tapping the app opens the CarAppService template, never this
+ * service, so waiting for the host to bind it would leave the card
+ * on Poweramp's session forever. No picker selection is needed, and
+ * none is asked for.
  *
  * Foreground: the service promotes itself in [onCreate], with a
  * minimal silent notification, whichever way it was started. A plain
@@ -64,20 +87,24 @@ import kotlinx.coroutines.launch
  * exactly this.
  *
  * Updates: the render is driven by the snapshot, the lyrics state and
- * the permission flag — the same inputs the car screen reads. Metadata
- * is re-sent only when its signature changes (track, cover, or lyric
- * line), so the subtitle is never spammed; the playback state is set
- * on every render, which is at most the repository's 500ms tick while
- * playing. A render that throws is caught and logged, never allowed to
- * take the service (and with it the card) down.
+ * the permission flag — the same inputs the car screen reads — plus a
+ * 250ms tick, so the playback state is re-published unconditionally
+ * on every render. Metadata is re-sent only when its signature
+ * changes (track, cover, or lyric line), so the subtitle is never
+ * spammed; the playback state is set on every render. A render that
+ * throws is caught and logged, never allowed to take the service
+ * (and with it the card) down.
  */
-class LyricsMediaService : MediaBrowserService() {
+class LyricsMediaService : MediaBrowserServiceCompat() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private lateinit var mediaSession: MediaSession
+    private lateinit var mediaSession: MediaSessionCompat
 
     /** Signature of the metadata currently published, or null when none is. */
     private var lastSignature: MirrorMetadataSignature? = null
+
+    /** True once the session has gone active — only after a track was published. */
+    private var sessionActive = false
 
     // The media-button / transport-control flags are deprecated in API 34
     // (there they are no-ops — a session with a callback handles them), but
@@ -93,47 +120,36 @@ class LyricsMediaService : MediaBrowserService() {
         promoteToForeground()
         val container = (applicationContext as MyLrcAutoApp).container
 
-        mediaSession = MediaSession(this, SESSION_TAG).apply {
+        mediaSession = MediaSessionCompat(this, SESSION_TAG).apply {
             setFlags(
-                MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or
-                    MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS,
+                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS,
             )
             setCallback(MirrorCallback(container.media))
         }
         sessionToken = mediaSession.sessionToken
-        // Publish FIRST, activate after — v1.0.18. The car reads the
-        // session's actions the moment it goes active, and locks the
-        // card's buttons in from that first read: v1.0.14 and v1.0.17
-        // both went active first (v1.0.17 with a synchronous publish
-        // right after), and the car still showed 10s rewind /
-        // fast-forward on both, because its first read found an
-        // empty action set. v1.0.15 published before activation and
-        // that fixed the buttons in principle — but the publish was
-        // unguarded, so a throwing first publish (a recycled cover
-        // bitmap cannot be parceled across Binder) killed onCreate,
-        // the service never started, and there was no card at all.
-        // This version does both: the full state — with the skip
-        // actions — is published synchronously from the current
-        // snapshot BEFORE the session goes active, and the publish is
-        // guarded, so a failure is logged and left for the render
-        // loop below instead of taking the service (and with it the
-        // card) down. Setting state on an inactive session is valid;
-        // the state is there when the car reads it at activation.
-        runCatching {
-            val sink = MediaSessionSink(mediaSession)
-            lastSignature = publishMirrorState(
-                sink,
-                container.media.snapshot.value,
-                CarGlance.of(
-                    state = container.lyrics.state.value,
-                    hasTrack = container.media.snapshot.value.hasTrack,
-                    permissionGranted = container.media.permissionGranted.value,
-                    positionMs = container.media.snapshot.value.playback.currentMs(),
-                ),
-                lastSignature,
+        // Activate first, publish after — AALyrics order. A publish must
+        // never block activation: a throwing first publish killed
+        // onCreate in v1.0.15, the service never started, and there was
+        // no card at all. But activation itself is gated on a track
+        // (see the class doc): with no track the snapshot publishes an
+        // empty action set, and the car locks the card buttons from its
+        // first read — so without a track the session stays inactive
+        // and the render loop below activates it the moment one arrives.
+        val firstSnapshot = container.media.snapshot.value
+        if (shouldActivateMirror(sessionActive, firstSnapshot)) {
+            mediaSession.isActive = true
+            sessionActive = true
+            isSessionActive = true
+            runCatching { renderCurrent(container) }
+                .onFailure { Log.w(TAG, "initial mirror publish failed, the render loop will retry", it) }
+        } else {
+            Log.i(
+                TAG,
+                "mirror not activating yet: no track in snapshot; " +
+                    "the render loop will activate it when a track arrives",
             )
-        }.onFailure { Log.w(TAG, "initial mirror publish failed, the render loop will retry", it) }
-        mediaSession.isActive = true
+        }
 
         scope.launch {
             combine(
@@ -147,10 +163,24 @@ class LyricsMediaService : MediaBrowserService() {
                     .onFailure { Log.w(TAG, "mirror render failed", it) }
             }
         }
+        // AALyrics' 250ms tick: the collectors above fire on state
+        // changes, but nothing emits when only the playhead advances,
+        // and the car reads the session whenever it likes — so the
+        // playback state is re-published on a tick too, unconditionally.
+        // The tick is also what activates a session that started with
+        // no track, the moment one arrives.
+        scope.launch {
+            while (isActive) {
+                delay(TICK_MS)
+                runCatching { renderCurrent(container) }
+                    .onFailure { Log.w(TAG, "mirror tick render failed", it) }
+            }
+        }
     }
 
     override fun onDestroy() {
         scope.cancel()
+        isSessionActive = false
         runCatching { mediaSession.isActive = false }
         runCatching { mediaSession.release() }
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
@@ -196,9 +226,17 @@ class LyricsMediaService : MediaBrowserService() {
 
     override fun onLoadChildren(
         parentId: String,
-        result: Result<MutableList<MediaBrowser.MediaItem>>,
+        result: Result<MutableList<MediaBrowserCompat.MediaItem>>,
     ) {
         result.sendResult(mutableListOf())
+    }
+
+    private fun renderCurrent(container: MyLrcAutoApp.AppContainer) {
+        render(
+            container.media.snapshot.value,
+            container.lyrics.state.value,
+            container.media.permissionGranted.value,
+        )
     }
 
     private fun render(
@@ -206,8 +244,14 @@ class LyricsMediaService : MediaBrowserService() {
         lyricsState: LyricsState,
         permissionGranted: Boolean,
     ) {
+        // The published action mask, for the car-test log below: the
+        // card's buttons come from these actions, so a log line that
+        // says whether there was a track and which actions went out is
+        // the only way to tell from the phone whether the car could
+        // have seen the skip buttons.
+        val publishedActions = mirrorPlayback(snapshot).actions.toFramework()
         lastSignature = publishMirrorState(
-            MediaSessionSink(mediaSession),
+            MediaSessionCompatSink(mediaSession),
             snapshot,
             CarGlance.of(
                 state = lyricsState,
@@ -217,6 +261,20 @@ class LyricsMediaService : MediaBrowserService() {
             ),
             lastSignature,
         )
+        Log.i(
+            TAG,
+            "mirror publish: hasTrack=${snapshot.hasTrack} " +
+                "actions=$publishedActions active=$sessionActive",
+        )
+        // First track after an empty start: the publish above already
+        // put the complete state out, so going active now means the
+        // car's first read sees the skip actions, not an empty set.
+        if (shouldActivateMirror(sessionActive, snapshot)) {
+            mediaSession.isActive = true
+            sessionActive = true
+            isSessionActive = true
+            Log.i(TAG, "mirror session activated with a track")
+        }
     }
 
     /**
@@ -231,7 +289,7 @@ class LyricsMediaService : MediaBrowserService() {
      */
     private inner class MirrorCallback(
         private val media: MediaSessionRepository,
-    ) : MediaSession.Callback() {
+    ) : MediaSessionCompat.Callback() {
         override fun onPlay() {
             runCatching { media.togglePlayPause() }
         }
@@ -261,16 +319,35 @@ class LyricsMediaService : MediaBrowserService() {
         private const val SESSION_TAG = "MyLrcAuto"
         private const val NOTIFICATION_CHANNEL_ID = "mirror"
         private const val NOTIFICATION_ID = 1
+
+        /**
+         * Whether the mirror media session is currently active.
+         *
+         * Item-7 diagnostic (v1.0.19): read by [CarAppService]
+         * before a new car session starts the mirror, so the session
+         * can log whether the card was already showing — the state
+         * fact the follow-up needs to tell an icon tap from a card
+         * tap. Mirrors the instance [sessionActive]; written on the
+         * main thread (service lifecycle and render run there) and
+         * read on the main thread, volatile so a binder-thread read
+         * can never see a stale value.
+         */
+        @Volatile
+        var isSessionActive: Boolean = false
+            private set
+
+        /** AALyrics' projection tick: re-publish the playback state this often. */
+        private const val TICK_MS = 250L
     }
 }
 
-/** Thin framework mapping for the pure mirror metadata. */
-private fun MirrorMetadata.toFramework(): MediaMetadata =
-    MediaMetadata.Builder().apply {
-        putString(MediaMetadata.METADATA_KEY_TITLE, title)
-        putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-        putString(MediaMetadata.METADATA_KEY_ALBUM, album)
-        putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
+/** Thin Compat mapping for the pure mirror metadata. */
+private fun MirrorMetadata.toCompat(): MediaMetadataCompat =
+    MediaMetadataCompat.Builder().apply {
+        putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+        putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+        putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+        putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs)
         // A recycled bitmap cannot be parceled across Binder — sending
         // one throws out of setMetadata. The snapshot can hold a bitmap
         // Poweramp itself recycled when it published new metadata (the
@@ -279,17 +356,17 @@ private fun MirrorMetadata.toFramework(): MediaMetadata =
         // out here rather than published: the card shows the title
         // without a cover until the next render brings a live one.
         artwork?.takeUnless { it.isRecycled }?.let {
-            putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
-            putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, it)
+            putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+            putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, it)
         }
-        putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, displayTitle)
-        subtitle?.let { putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, it) }
-        description?.let { putString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, it) }
+        putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, displayTitle)
+        subtitle?.let { putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, it) }
+        description?.let { putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, it) }
     }.build()
 
-/** The real [MirrorStateSink]: the framework session behind it. */
-private class MediaSessionSink(
-    private val session: MediaSession,
+/** The real [MirrorStateSink]: the Compat session behind it. */
+private class MediaSessionCompatSink(
+    private val session: MediaSessionCompat,
 ) : MirrorStateSink {
     override fun setPlaybackState(
         state: MirrorPlaybackState,
@@ -298,12 +375,12 @@ private class MediaSessionSink(
         actions: Long,
     ) {
         session.setPlaybackState(
-            PlaybackState.Builder()
+            PlaybackStateCompat.Builder()
                 .setState(
                     when (state) {
-                        MirrorPlaybackState.PLAYING -> PlaybackState.STATE_PLAYING
-                        MirrorPlaybackState.PAUSED -> PlaybackState.STATE_PAUSED
-                        MirrorPlaybackState.NONE -> PlaybackState.STATE_NONE
+                        MirrorPlaybackState.PLAYING -> PlaybackStateCompat.STATE_PLAYING
+                        MirrorPlaybackState.PAUSED -> PlaybackStateCompat.STATE_PAUSED
+                        MirrorPlaybackState.NONE -> PlaybackStateCompat.STATE_NONE
                     },
                     positionMs,
                     speed,
@@ -314,9 +391,22 @@ private class MediaSessionSink(
     }
 
     override fun setMetadata(metadata: MirrorMetadata?) {
-        session.setMetadata(metadata?.toFramework())
+        session.setMetadata(metadata?.toCompat())
     }
 }
+
+/**
+ * Whether the mirror session may go active for this snapshot: only once
+ * a track is loaded, so the car's first read of the session sees the
+ * complete skip actions rather than an empty action set. An empty
+ * snapshot must never activate the session — activating it would hand
+ * the car an empty action set, and this car locks the card buttons
+ * from its first read and never re-derives them, so the card would
+ * show 10s rewind/fast-forward forever. Pure, so the guard is
+ * unit-testable: an empty snapshot does not activate.
+ */
+internal fun shouldActivateMirror(sessionActive: Boolean, snapshot: PlayerSnapshot): Boolean =
+    !sessionActive && snapshot.hasTrack
 
 /**
  * The transport actions as a `PlaybackState` flags bitmask.
@@ -325,15 +415,19 @@ private class MediaSessionSink(
  * the card must offer skip-to-previous / skip-to-next and never
  * rewind / fast-forward. The flags are compile-time constants, so
  * calling this from a plain JVM unit test needs no Android runtime.
+ * The values are the same in framework `PlaybackState` and
+ * `PlaybackStateCompat` by design, so this one bitmask serves both —
+ * the Compat sink above passes it straight to
+ * `PlaybackStateCompat.Builder.setActions`.
  */
 internal fun MirrorTransportActions.toFramework(): Long {
     var actions = 0L
     if (playPause) {
-        actions = actions or PlaybackState.ACTION_PLAY or
-            PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE
+        actions = actions or PlaybackStateCompat.ACTION_PLAY or
+            PlaybackStateCompat.ACTION_PAUSE or PlaybackStateCompat.ACTION_PLAY_PAUSE
     }
-    if (skipPrevious) actions = actions or PlaybackState.ACTION_SKIP_TO_PREVIOUS
-    if (skipNext) actions = actions or PlaybackState.ACTION_SKIP_TO_NEXT
-    if (seek) actions = actions or PlaybackState.ACTION_SEEK_TO
+    if (skipPrevious) actions = actions or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+    if (skipNext) actions = actions or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+    if (seek) actions = actions or PlaybackStateCompat.ACTION_SEEK_TO
     return actions
 }

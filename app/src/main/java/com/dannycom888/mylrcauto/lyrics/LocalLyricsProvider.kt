@@ -149,10 +149,18 @@ class LocalLyricsProvider(
 
         // 1. Audio-anchored: the playing track's own audio file, then the
         //    `.lrc` with the identical stem (the pairing rule Poweramp uses).
+        //    The `.lrc` is only trusted when its title is the track's title:
+        //    findAudioFile matches the audio file by substring, so a longer
+        //    file ("爱你.mp3") can be picked for a shorter title ("爱"), and
+        //    its same-stem `.lrc` would show the wrong song's lyrics. A
+        //    title that does not match falls through to the metadata
+        //    fallback below (exact keys), which is the stricter check.
         val audioFile = LocalLyricsMatcher.findAudioFile(title, artists, index.audio)
         if (audioFile != null) {
             val lrcEntry = LocalLyricsMatcher.sameStemLrc(audioFile, index.lrc)
-            if (lrcEntry != null) {
+            if (lrcEntry != null &&
+                LocalLyricsMatcher.lrcTitleMatches(lrcEntry.file.fileName, title)
+            ) {
                 parseFile(lrcEntry.file)?.let { return it }
             }
         }
@@ -386,6 +394,6 @@ class LocalLyricsProvider(
         const val SLOW_WALK_MS = 10_000L
 
         /** At most this many matching files are read and parsed per lookup. */
-        private const val MAX_FILES_TO_PARSE = 8
+        private const val MAX_FILES_TO_PARSE = 32
     }
 }

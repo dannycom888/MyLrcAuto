@@ -42,10 +42,16 @@ internal const val SPLIT_SCREEN_WIDTH_DP = 600f
  *   would be a full-screen layout squeezed into a third of the screen.
  * - [visibleAreaEmpty]: the host reported a visible area that is empty —
  *   it granted a surface but is not actually showing it, so the surface
- *   drawing would be invisible and the card is the answer. False when the
- *   host has not reported an area yet (null), which is treated as "all
- *   visible": a first frame drawn edge to edge and corrected a moment
- *   later is better than one that is not drawn.
+ *   drawing would be invisible and the card is the answer.
+ * - [visibleAreaReported]: the host has reported a visible area at all.
+ *   False when it has not reported one yet (null) — and a template choice
+ *   must wait for that fact, not guess: v1.0.18 treated null as "all
+ *   visible" and picked the surface template while the surface was not
+ *   ready, which threw during the template build on first open and
+ *   flashed the error message. Until the area is reported, the fallback
+ *   is the answer. Safe degradation: if a car never reports an area,
+ *   the screen stays on the fallback pane (title + lyric lines) — never
+ *   a black screen, never an error.
  * - [screenStarted]: the screen's own lifecycle is at least STARTED —
  *   the app is the full-screen foreground app. When the screen is not
  *   started (covered — the dashboard / split-screen slot on this car),
@@ -59,8 +65,8 @@ internal const val SPLIT_SCREEN_WIDTH_DP = 600f
  *   change anyway, and the tick loop's redraw gap dampens rapid swaps.
  *
  * The visible area arrives as an android.graphics.Rect, which cannot run
- * on the JVM, so the screen maps it to this boolean before calling here
- * (null → false, empty rect → true).
+ * on the JVM, so the screen maps it to these booleans before calling here
+ * (null → reported false, empty rect → empty true).
  */
 internal fun chooseTemplate(
     surfaceLive: Boolean,
@@ -68,10 +74,12 @@ internal fun chooseTemplate(
     surfaceWidthDp: Float?,
     visibleAreaEmpty: Boolean,
     screenStarted: Boolean,
+    visibleAreaReported: Boolean,
 ): TemplateChoice {
     if (!screenStarted) return TemplateChoice.FALLBACK
     if (!surfaceLive) return TemplateChoice.FALLBACK
     if (apiLevel < CarAppApiLevels.LEVEL_7) return TemplateChoice.FALLBACK
+    if (!visibleAreaReported) return TemplateChoice.FALLBACK
     if (visibleAreaEmpty) return TemplateChoice.FALLBACK
     if (surfaceWidthDp != null && surfaceWidthDp < SPLIT_SCREEN_WIDTH_DP) {
         return TemplateChoice.FALLBACK

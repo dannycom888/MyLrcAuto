@@ -196,6 +196,25 @@ class LocalLyricsMatcherTest {
     }
 
     @Test
+    fun lrcTitleMatchesRejectsSubstringTitle() {
+        // v1.0.19: the audio-anchored lookup used to return the
+        // same-stem .lrc without checking its title — "爱" could pick
+        // up "爱你.lrc" when the exact "爱" audio file was missing
+        // from the folder. A substring title is not a match.
+        assertFalse(LocalLyricsMatcher.lrcTitleMatches("爱你.lrc", "爱"))
+        assertFalse(LocalLyricsMatcher.lrcTitleMatches("周杰伦 - 晴天.lrc", "晴"))
+    }
+
+    @Test
+    fun lrcTitleMatchesAcceptsLiveSuffix() {
+        // A "(Live)" / "[Live]" suffix still passes: the bracketed
+        // part is stripped before comparing.
+        assertTrue(LocalLyricsMatcher.lrcTitleMatches("晴天 (Live).lrc", "晴天"))
+        assertTrue(LocalLyricsMatcher.lrcTitleMatches("Artist - Title (Live).lrc", "Title"))
+        assertTrue(LocalLyricsMatcher.lrcTitleMatches("晴天 [Live].lrc", "晴天"))
+    }
+
+    @Test
     fun matchLrcAudioAnchored() {
         val files = listOf(lrc("庄心妍 - 一万个舍不得.lrc"), lrc("其他.lrc"))
         assertEquals(

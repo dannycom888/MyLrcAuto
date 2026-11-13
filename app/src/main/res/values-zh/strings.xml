@@ -50,8 +50,6 @@
     <string name="car_permission_body">请在手机上开启通知权限，让 App 知道在放什么歌。</string>
     <string name="car_untimed">这份歌词没有时间标签</string>
     <string name="car_untimed_body">这个 .lrc 文件没有时间标签，没法同步。</string>
-    <string name="car_failed">出了点问题</string>
-    <string name="car_failed_body">请重试。</string>
     <string name="car_next">下一句：%1$s</string>
     <string name="car_instrumental">（纯音乐）</string>
     <string name="car_play">播放</string>

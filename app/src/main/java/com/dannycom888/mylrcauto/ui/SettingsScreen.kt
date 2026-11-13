@@ -173,7 +173,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { container.settings.setAppLanguage(language) }
-                    .padding(vertical = 2.dp),
+                    .padding(vertical = 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(

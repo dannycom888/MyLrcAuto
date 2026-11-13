@@ -22,9 +22,9 @@ import org.junit.Test
  * this input cannot distinguish it; that is for the car to tell.
  *
  * The visible area arrives as an android.graphics.Rect, which cannot run
- * on the JVM, so the screen maps it to a boolean before calling
- * [chooseTemplate] (null → false, empty rect → true) and the tests cover
- * the boolean directly.
+ * on the JVM, so the screen maps it to booleans before calling
+ * [chooseTemplate] (null → reported false, empty rect → empty true) and
+ * the tests cover the booleans directly.
  */
 class TemplateChoiceTest {
 
@@ -38,6 +38,7 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
+                visibleAreaReported = true,
             ),
         )
     }
@@ -54,6 +55,7 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 400f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
+                visibleAreaReported = true,
             ),
         )
     }
@@ -69,21 +71,28 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = true,
                 screenStarted = true,
+                visibleAreaReported = true,
             ),
         )
     }
 
     @Test
-    fun `no reported visible area with a wide surface shows the surface template`() {
-        // Null means "not reported yet", treated as all visible.
+    fun `no reported visible area with a wide surface returns FALLBACK`() {
+        // v1.0.19: a template choice must wait for surface facts.
+        // Null means "not reported yet" — v1.0.18 treated it as all
+        // visible and picked the surface template while the surface
+        // was not ready, which threw during the template build on
+        // first open and flashed the error message. Until the area
+        // is reported, the fallback is the answer.
         assertEquals(
-            TemplateChoice.ON_SURFACE,
+            TemplateChoice.FALLBACK,
             chooseTemplate(
                 surfaceLive = true,
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
+                visibleAreaReported = false,
             ),
         )
     }
@@ -100,6 +109,7 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
+                visibleAreaReported = true,
             ),
         )
     }
@@ -114,6 +124,7 @@ class TemplateChoiceTest {
                 surfaceWidthDp = null,
                 visibleAreaEmpty = false,
                 screenStarted = true,
+                visibleAreaReported = true,
             ),
         )
     }
@@ -128,6 +139,7 @@ class TemplateChoiceTest {
                 surfaceWidthDp = SPLIT_SCREEN_WIDTH_DP,
                 visibleAreaEmpty = false,
                 screenStarted = true,
+                visibleAreaReported = true,
             ),
         )
     }
@@ -146,6 +158,7 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = false,
+                visibleAreaReported = true,
             ),
         )
     }
@@ -160,6 +173,7 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
+                visibleAreaReported = true,
             ),
         )
     }

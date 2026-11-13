@@ -1,8 +1,17 @@
-# My LRC Auto 1.0.18
+# My LRC Auto 1.0.19
 
 An original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on the phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.19
+
+- **Card buttons follow AALyrics**: the card still showed 10s rewind/fast-forward in 1.0.18, because this car locks the card buttons from its first read of the session — and the first publish could happen while no track was loaded yet, so the first read found an empty action set and locked in 10s forever. The mirror service now uses the AALyrics shape (`MediaBrowserServiceCompat` + `MediaSessionCompat`, active first then publish, collectors plus a 250ms tick that re-publishes the playback state every time), and the session only goes active once a track is loaded, so the car's first read sees the complete skip actions. The skip buttons stay hardcoded to previous/next — Poweramp does not advertise skip in its playback-state actions, so copying its capabilities would lose them (the 1.0.14 pitfall). The published mask is play/pause + skip previous/next + seek where advertised — no rewind/fast-forward. Needs a car test to confirm.
+- **Big screen shows no prompt at all**: opening the full-screen view briefly flashed "出了点问题 / 请重试。" — the app's own fallback for a template that threw while building on first open. A failed build now returns a neutral loading pane instead (loading state only, no error text), the two error strings are deleted, and the template choice now waits until the car has reported the visible area before drawing on the surface — so the first-open throw should not happen at all. If a car never reports an area, the screen stays on the fallback pane (title + lyric lines), never a black screen, never an error.
+- **Lyrics matching is stricter**: the audio-anchored lookup could return the same-stem `.lrc` without checking its title, so a missing audio file could pair a song with a longer-titled neighbour ("爱" picking up "爱你"). The title is now verified after the lookup and a mismatch falls through to the metadata fallback; "(Live)" suffixes still match. The metadata fallback also parses up to 32 files instead of 8.
+- **Tighter spacing, bigger cover**: the three language rows in Settings sit closer together; lyric lines sit closer together (phone and car); the cover below the pane is now 200dp (was 180dp), same position and glow.
+- **Two-tap flow investigated, not yet built**: one tap on the icon should show only the small card and a tap on the card should open the big screen, always. The Car App Library gives no reliable way to tell an icon tap from a card tap, and finishing the icon launch would also kill the card (the mirror stops when the session ends, and there is no signal that separates "app finished" from "car disconnected"). This version only logs the launch intent and whether the mirror was already active, so the follow-up can be built on what the car actually sends. The flow is unchanged for now: icon tap opens the big screen, Home/BACK returns to the dashboard with the card, card tap reopens the big screen.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.18
 
@@ -119,11 +128,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 141 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 149 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.18 (versionCode 20), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.19 (versionCode 21), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 
@@ -140,6 +149,15 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
+
+## v1.0.19 变化
+
+- **卡片按钮按 AALyrics 修**：1.0.18 的卡片还是 10 秒快退/快进，因为这台车机在会话刚激活那一刻就读了按钮集合、读到就锁定再也不改，而第一次发布时可能还没加载到歌（空快照→空按钮集合→锁定成 10 秒）。这版镜像服务改成 AALyrics 的做法（`MediaBrowserServiceCompat` + `MediaSessionCompat`，先激活再发布，收集器加 250ms 节拍、每次都重发播放状态），并且只有加载到歌之后会话才激活，所以车机第一次读到的就是完整的跳歌按钮。上一首/下一首仍是写死的——Poweramp 本来就不在播放状态里声明跳歌，照抄它就丢了跳歌按钮（1.0.14 的教训）。发布的按钮只有播放/暂停 + 上一首/下一首 + 有就带进度条，没有快退/快进。需实车验证。
+- **大屏不再出任何提示**：第一次打开全屏时短暂闪过“出了点问题 / 请重试。”，那是模板构建抛错时 App 自己的兜底文案。这版构建失败时返回一个纯加载窗格（只有加载状态，没有错误文字），两个错误文案已删除；模板选择也会等到车机报出可见区域之后才画到画面上，第一打开就不该再抛错。如果某台车一直不报可见区域，屏幕就停在备用窗格（标题 + 歌词行），不会黑屏、不会报错。
+- **歌词匹配更严**：按音频文件找歌词时，以前找到同名主干的 `.lrc` 就直接返回、不验标题，音频文件本身不在文件夹里时可能配错（“爱”配到“爱你”）。这版找到后先验标题，不匹配就落到元数据回退；“(Live)”后缀照样能过。元数据回退最多解析 32 个文件（以前 8 个）。
+- **排版更紧、封面更大**：设置里三行语言选项挨得更紧；歌词行距更小（手机和车机一起）；小框下面的封面改成 200dp（以前 180dp），位置和发光不变。
+- **两步进大屏只做了调查、还没实现**：点图标应该只进小卡片、再点卡片才进大屏，无论开车或不开车。查过 Car App Library 1.7.0 的源码：它分不出图标点击和卡片点击（两者拿到的启动意图是一样的），而且直接结束图标那次启动会连会话一起销毁、镜像停掉、小卡片也没了——没有信号能分清“App 结束了”和“车断开了”。这版只把启动意图和镜像状态记到日志里，给下一步提供实测依据。流程暂时不变：点图标进大屏，按 Home/返回回仪表盘看卡片，点卡片再进大屏。
+- **图标不变**（v22）。
 
 ## v1.0.18 变化
 

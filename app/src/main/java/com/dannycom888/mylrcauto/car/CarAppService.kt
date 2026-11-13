@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator
 import com.dannycom888.mylrcauto.MyLrcAutoApp
+import com.dannycom888.mylrcauto.media.LyricsMediaService
 import com.dannycom888.mylrcauto.media.MirrorServiceControl
 import com.dannycom888.mylrcauto.util.AppLocale
 
@@ -44,6 +45,14 @@ class CarAppService : androidx.car.app.CarAppService() {
         // start the service as soon as a track is loaded.
         val app = applicationContext as MyLrcAutoApp
         runCatching { app.container.setCarSessionLive(true) }
+        // Item-7 diagnostic (v1.0.19): whether the mirror session
+        // was already active BEFORE this session was created — read
+        // before the start below, so it cannot be this launch's own
+        // start. A card tap can only happen while the card is already
+        // showing, which needs an active mirror; a cold icon tap
+        // never has one. Passed to the session for the log in
+        // onCreateScreen; not acted on (see describeLaunchIntent).
+        val mirrorAlreadyActive = LyricsMediaService.isSessionActive
         // The car app is the foreground app from here, so starting the
         // mirror service is allowed — where the snapshot hook's
         // background start may have been blocked (v1.0.13). The screen
@@ -60,7 +69,7 @@ class CarAppService : androidx.car.app.CarAppService() {
                 MirrorServiceControl.start(applicationContext)
             }
         }
-        return CarSession()
+        return CarSession(mirrorAlreadyActive)
     }
 
     /**

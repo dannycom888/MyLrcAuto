@@ -64,11 +64,11 @@ object LyricsTextSize {
     /** Current line: 5 sp larger than the base size (17 → 22). */
     fun currentSizeSp(baseSp: Int): Int = baseSp + 5
 
-    /** Current line height: base + 13 sp (17 → 30). */
-    fun currentLineHeightSp(baseSp: Int): Int = baseSp + 13
+    /** Current line height: base + 11 sp (17 → 28). */
+    fun currentLineHeightSp(baseSp: Int): Int = baseSp + 11
 
-    /** Other lines' height: base + 7 sp (17 → 24). */
-    fun lineHeightSp(baseSp: Int): Int = baseSp + 7
+    /** Other lines' height: base + 5 sp (17 → 22). */
+    fun lineHeightSp(baseSp: Int): Int = baseSp + 5
 }
 
 /**
@@ -159,7 +159,7 @@ fun LyricsView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onSeek(line.timeMs) }
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                        .padding(horizontal = 20.dp, vertical = 6.dp),
                     fontSize = if (isCurrent) LyricsTextSize.currentSizeSp(fontSizeSp).sp else fontSizeSp.sp,
                     lineHeight = if (isCurrent) LyricsTextSize.currentLineHeightSp(fontSizeSp).sp else LyricsTextSize.lineHeightSp(fontSizeSp).sp,
                     fontFamily = fontSpec.fontFamily,

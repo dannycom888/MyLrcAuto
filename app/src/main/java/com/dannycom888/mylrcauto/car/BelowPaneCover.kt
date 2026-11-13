@@ -78,8 +78,8 @@ fun belowPaneCoverPlacement(
     )
 }
 
-/** The small cover's size: 180dp, down from the 240dp of v1.0.15. */
-const val BELOW_PANE_COVER_SIZE_DP = 180f
+/** The small cover's size: 200dp, up from the 180dp of v1.0.18. */
+const val BELOW_PANE_COVER_SIZE_DP = 200f
 
 /**
  * The pane box holds one title row plus the artist, ~100dp tall on any

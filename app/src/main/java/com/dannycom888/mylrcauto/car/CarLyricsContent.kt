@@ -167,7 +167,7 @@ fun CarLyricsContent(
         )
         // The small cover below the pane, in the pane column: the sharp
         // cover (or the M-note icon when the player publishes none),
-        // 180dp, its top edge below the pane's midline with clear space
+        // 200dp, its top edge below the pane's midline with clear space
         // between the pane and the cover. The title and artist stay in
         // the pane itself, so they are not repeated here. A soft glow
         // runs around the cover's edge, in the theme's secondary colour

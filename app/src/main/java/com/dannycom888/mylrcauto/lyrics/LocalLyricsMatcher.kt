@@ -255,6 +255,24 @@ object LocalLyricsMatcher {
     }
 
     /**
+     * True when the `.lrc` file's title part is the track's title — the
+     * guard for the audio-anchored lookup ([LocalLyricsProvider] step 1).
+     * [findAudioFile] matches the *audio* file by substring, so it can
+     * pick a longer file ("爱你.mp3") for a shorter title ("爱"); the
+     * same-stem `.lrc` then has the wrong title too, and returning it
+     * would show the wrong song's lyrics. This check compares the title
+     * parts after normalization with bracketed suffixes stripped, so
+     * "晴天 (Live).lrc" still matches "晴天" while "爱你.lrc" does not
+     * match "爱". A file with an artist part contributes only its title
+     * part; a file with no separator is compared whole.
+     */
+    fun lrcTitleMatches(lrcFileName: String, title: String): Boolean {
+        val stem = lrcFileName.removeSuffix(".lrc").removeSuffix(".LRC")
+        val titlePart = splitArtistTitle(stem)?.second ?: stem
+        return normalize(stripBracketed(titlePart)) == normalize(stripBracketed(title))
+    }
+
+    /**
      * The `.lrc` file whose stem is exactly the audio file's stem — the
      * pairing rule Poweramp uses. Returns null when no indexed `.lrc` has
      * that stem.
