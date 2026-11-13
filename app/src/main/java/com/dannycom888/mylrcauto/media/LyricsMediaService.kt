@@ -43,13 +43,15 @@ import kotlin.jvm.Volatile
  * follow, so the mirror can never follow itself.
  *
  * This is the AALyrics shape: [MediaBrowserServiceCompat] with a
- * [MediaSessionCompat], active first and published after, collectors
- * plus a 250ms tick re-publishing the playback state unconditionally
- * and the metadata only when its signature changes. The pure publish
- * logic lives in [LyricsMirror] and is unchanged — only this sink
- * and service were swapped to the Compat classes, because the
- * framework `MediaSession` is what the car reads the buttons from
- * and the Compat session is the one AALyrics' working card uses.
+ * [MediaSessionCompat], collectors plus a 250ms tick re-publishing
+ * the playback state unconditionally and the metadata only when its
+ * signature changes. One deliberate deviation from AALyrics: the
+ * publish/activation order (see the activation note below). The
+ * pure publish logic lives in [LyricsMirror] and is unchanged —
+ * only this sink and service were swapped to the Compat classes,
+ * because the framework `MediaSession` is what the car reads the
+ * buttons from and the Compat session is the one AALyrics' working
+ * card uses.
  *
  * Activation: the session goes active only once a track is loaded —
  * never with an empty snapshot. The car locks the card buttons from
@@ -58,13 +60,28 @@ import kotlin.jvm.Volatile
  * track → empty action set → the car locks 10s forever). v1.0.18
  * published the complete state before activation, guarded — and the
  * car still showed 10s, because the snapshot was empty at that
- * first publish. So this version gates activation itself on a track:
- * with one, the session goes active first (AALyrics order — a
- * publish must never block activation, so the first publish is
- * guarded) and the complete state is published right after; without
- * one, the session stays inactive and the render loop activates it
- * the moment a track arrives — publish the complete state, then set
- * active — so the car's first read sees the skip actions.
+ * first publish. So this version gates activation itself on a
+ * track: with one, the complete state is published first (guarded —
+ * a publish must never be fatal) and the session goes active
+ * immediately after, so the car's first read sees the skip actions;
+ * without one, the session stays inactive and the render loop
+ * activates it the moment a track arrives, in the same
+ * publish-then-activate order (see [render]).
+ *
+ * Why not AALyrics' activate-first order, which v1.0.19 copied for
+ * its onCreate path? AALyrics' host BINDS its browser service and
+ * holds a controller subscription from before activation, so every
+ * publish after activation is delivered to it. This service is
+ * never bound by the car host (the app is a POI template app, not
+ * the selected media source): the host discovers the session
+ * through the system's active-session list, and its first read can
+ * land the moment `isActive` flips — before any publish. On the
+ * path the user actually hits (the service starts while Poweramp
+ * is already playing), v1.0.19's onCreate activated first and the
+ * first read found a session with no playback state at all, which
+ * this car renders as the default 10-second rewind/fast-forward
+ * card — and never revisits. Publish-then-activate, everywhere,
+ * is the order that survives that read.
  * The service is started by the app itself, not by the car host: the
  * app starts it the moment a track is loaded and stops it when there
  * is no track (see [MirrorActivation] and the AppContainer wiring),
@@ -128,19 +145,21 @@ class LyricsMediaService : MediaBrowserServiceCompat() {
             setCallback(MirrorCallback(container.media))
         }
         sessionToken = mediaSession.sessionToken
-        // Activate first, publish after — AALyrics order. A publish must
-        // never block activation: a throwing first publish killed
-        // onCreate in v1.0.15, the service never started, and there was
-        // no card at all. But activation itself is gated on a track
-        // (see the class doc): with no track the snapshot publishes an
-        // empty action set, and the car locks the card buttons from its
-        // first read — so without a track the session stays inactive
-        // and the render loop below activates it the moment one arrives.
+        // Publish first, activate after — the render loop's order,
+        // and the only safe one for a session the host discovers
+        // through the active-session list (see the class doc):
+        // render() publishes the complete state and then activates
+        // the session itself when a track is present. Activation is
+        // still gated on a track (an empty snapshot must never go
+        // active — its empty action set is what locked the card to
+        // 10s in the first place), and the publish is guarded, as in
+        // v1.0.18: a failure is logged and left to the render loop,
+        // never allowed to take the service down. v1.0.19 activated
+        // first on this path; that was the AALyrics order without
+        // AALyrics' binding, and the car's first read found no
+        // playback state at all.
         val firstSnapshot = container.media.snapshot.value
         if (shouldActivateMirror(sessionActive, firstSnapshot)) {
-            mediaSession.isActive = true
-            sessionActive = true
-            isSessionActive = true
             runCatching { renderCurrent(container) }
                 .onFailure { Log.w(TAG, "initial mirror publish failed, the render loop will retry", it) }
         } else {

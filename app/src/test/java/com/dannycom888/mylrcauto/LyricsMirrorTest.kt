@@ -222,10 +222,11 @@ class LyricsMirrorTest {
 
     @Test
     fun transportActionsOnlyForSupportedCapabilities() {
-        // Play/pause and seek still follow what the player advertises —
+        // Play/pause still follows what the player advertises —
         // but previous/next track are always offered for a track (see
-        // skipButtonsOfferedEvenWhenPlayerDoesNotAdvertiseThem), so a
-        // player that advertises nothing still gets skip buttons.
+        // skipButtonsOfferedEvenWhenPlayerDoesNotAdvertiseThem), and
+        // seek is never offered (v1.0.20), so a player that advertises
+        // nothing still gets skip buttons and no seek.
         val snapshot = playingSnapshot(
             transport = Transport(
                 playPause = false,
@@ -248,6 +249,10 @@ class LyricsMirrorTest {
         // so copying the advertised actions left the mirror with no skip
         // buttons and the car showed 10s rewind/fast-forward instead.
         // The mirror offers previous/next whenever there is a track.
+        // v1.0.20: seek is the mirror image of that rule — Poweramp DOES
+        // advertise seek, and while the mask carried ACTION_SEEK_TO the
+        // car preferred the 10s seek pair over the skip buttons, so the
+        // mirror never offers seek, whatever the player advertises.
         val snapshot = playingSnapshot(
             transport = Transport(
                 playPause = true,
@@ -260,7 +265,7 @@ class LyricsMirrorTest {
         assertTrue(playback.actions.skipPrevious)
         assertTrue(playback.actions.skipNext)
         assertTrue(playback.actions.playPause)
-        assertTrue(playback.actions.seek)
+        assertFalse(playback.actions.seek)
     }
 
     @Test
@@ -313,6 +318,10 @@ class LyricsMirrorTest {
         assertTrue(actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
         assertTrue(actions and PlaybackState.ACTION_REWIND == 0L)
         assertTrue(actions and PlaybackState.ACTION_FAST_FORWARD == 0L)
+        // v1.0.20: no ACTION_SEEK_TO in the published mask either —
+        // while it was there, this car rendered the 10s seek pair
+        // instead of the skip buttons (see mirrorPlayback).
+        assertTrue(actions and PlaybackState.ACTION_SEEK_TO == 0L)
         // Metadata goes out too, on the first publish.
         assertEquals(1, sink.metadata.size)
         assertEquals("缠绕千年的寂寞", sink.metadata.single()?.subtitle)

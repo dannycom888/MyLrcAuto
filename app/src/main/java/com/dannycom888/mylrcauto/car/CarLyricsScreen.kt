@@ -149,22 +149,48 @@ class CarLyricsScreen(
         //
         // Guarded: a template that throws takes the whole car app down with
         // the host's "unexpected error" dialog, and a bad bitmap or a bad
-        // line is not worth that. The answer is a neutral loading pane —
-        // loading state only, no error text: the big screen must never show
-        // any prompt at all, and a template-build failure is a momentary
-        // state the next tick recomposes away, not something to announce.
-        // The next tick recomposes and replaces it.
+        // line is not worth that. The answer is real content — the neutral
+        // pane (title + artist) built by [emergencyPane] — never a loading
+        // pane and never any error text: v1.0.19's catch answered with a
+        // loading pane, and a build that kept failing (or a lookup that
+        // never landed) left the big screen on an endless spinner with
+        // nothing on it. The next tick recomposes and replaces this pane
+        // the moment a full compose succeeds again.
         return try {
             val content = compose()
             shown = content
             content.toTemplate()
         } catch (e: Exception) {
-            Log.w(TAG, "template build failed, showing a loading pane instead", e)
-            PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
-                .setTitle(carContext.getString(R.string.app_name))
-                .setHeaderAction(Action.BACK)
-                .build()
+            Log.w(TAG, "template build failed, showing the neutral pane instead", e)
+            emergencyPane()
         }
+    }
+
+    /**
+     * The last-resort template: the neutral pane (title + artist rows)
+     * built straight from the current snapshot, without [compose] —
+     * compose is what may have just thrown. Reading the snapshot and
+     * building rows from two strings cannot realistically fail; if the
+     * snapshot itself is unreadable, the app name alone fills the row.
+     * No transport strip: building actions is part of what this path is
+     * sheltering from, and the next successful compose restores them.
+     */
+    private fun emergencyPane(): Template {
+        val snapshot = runCatching { container.media.snapshot.value }.getOrNull()
+        val trackTitle = snapshot?.track?.title?.takeIf { it.isNotBlank() }
+        val artist = snapshot?.track?.artist?.takeIf { it.isNotBlank() }.orEmpty()
+        val pane = Pane.Builder()
+            .addRow(
+                Row.Builder()
+                    .setTitle(trackTitle ?: carContext.getString(R.string.app_name))
+                    .apply { if (artist.isNotEmpty()) addText(artist) }
+                    .build(),
+            )
+            .build()
+        return PaneTemplate.Builder(pane)
+            .setTitle(carContext.getString(R.string.app_name))
+            .setHeaderAction(Action.BACK)
+            .build()
     }
 
     private fun compose(): Content {
@@ -199,7 +225,6 @@ class CarLyricsScreen(
                 surfaceWidthDp = surface.surfaceWidthDp.value,
                 visibleAreaEmpty = surface.visibleArea.value?.isEmpty == true,
                 screenStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
-                visibleAreaReported = surface.visibleArea.value != null,
             ) == TemplateChoice.ON_SURFACE,
         )
     }
@@ -261,14 +286,17 @@ class CarLyricsScreen(
 
     private fun Content.fallback(): Template = when (glance) {
         is CarGlance.Now -> lyrics(glance)
-        // Still looking: the loading pane, for as long as it takes.
-        // There is no timeout that gives up and says there are no
-        // lyrics — a fresh process walks 1,092 .lrc files before the
-        // first one resolves, and the lookup is still running.
-        CarGlance.Looking -> PaneTemplate.Builder(Pane.Builder().setLoading(true).build())
-            .setTitle(title)
-            .setHeaderAction(Action.BACK)
-            .build()
+        // Still looking: the neutral pane — title and artist, real
+        // content — NOT a loading pane. v1.0.19 (and earlier) answered
+        // Looking with a loading template; combined with the
+        // visible-area gate that kept the surface template unreachable
+        // for the whole session (see TemplateChoice), a slow or stuck
+        // first lookup left the big screen on that spinner forever,
+        // with nothing else on it. A lookup in progress now shows the
+        // same neutral pane as a finished no-match, and the state
+        // collectors invalidate to the lyrics pane the moment the
+        // lookup lands.
+        CarGlance.Looking -> neutralPane()
 
         CarGlance.Silent -> message(R.string.car_silent, R.string.car_silent_body)
         // No lyrics for this track: a neutral pane with the title and

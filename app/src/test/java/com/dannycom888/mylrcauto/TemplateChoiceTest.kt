@@ -22,9 +22,9 @@ import org.junit.Test
  * this input cannot distinguish it; that is for the car to tell.
  *
  * The visible area arrives as an android.graphics.Rect, which cannot run
- * on the JVM, so the screen maps it to booleans before calling
- * [chooseTemplate] (null → reported false, empty rect → empty true) and
- * the tests cover the booleans directly.
+ * on the JVM, so the screen maps it to a boolean before calling
+ * [chooseTemplate] (null or non-empty → false, empty rect → true) and
+ * the tests cover the boolean directly.
  */
 class TemplateChoiceTest {
 
@@ -38,7 +38,6 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
-                visibleAreaReported = true,
             ),
         )
     }
@@ -55,7 +54,6 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 400f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
-                visibleAreaReported = true,
             ),
         )
     }
@@ -71,28 +69,30 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = true,
                 screenStarted = true,
-                visibleAreaReported = true,
             ),
         )
     }
 
     @Test
-    fun `no reported visible area with a wide surface returns FALLBACK`() {
-        // v1.0.19: a template choice must wait for surface facts.
-        // Null means "not reported yet" — v1.0.18 treated it as all
-        // visible and picked the surface template while the surface
-        // was not ready, which threw during the template build on
-        // first open and flashed the error message. Until the area
-        // is reported, the fallback is the answer.
+    fun `unreported visible area does not block the surface template`() {
+        // v1.0.20 regression pin. v1.0.19 gated the choice on the
+        // visible area having been reported (null → FALLBACK) — and
+        // deadlocked the big screen for the whole session: the area
+        // is only ever reported once the surface template is on
+        // screen, so waiting for the report before choosing it made
+        // the surface unreachable and left the fallback (then a
+        // loading pane) up forever. An unreported area maps to
+        // visibleAreaEmpty = false here, and must not block: the
+        // surface CONTENT still waits for the area before drawing
+        // lyrics (black until then), so nothing shifts.
         assertEquals(
-            TemplateChoice.FALLBACK,
+            TemplateChoice.ON_SURFACE,
             chooseTemplate(
                 surfaceLive = true,
                 apiLevel = CarAppApiLevels.LEVEL_7,
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
-                visibleAreaReported = false,
             ),
         )
     }
@@ -109,7 +109,6 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
-                visibleAreaReported = true,
             ),
         )
     }
@@ -124,7 +123,6 @@ class TemplateChoiceTest {
                 surfaceWidthDp = null,
                 visibleAreaEmpty = false,
                 screenStarted = true,
-                visibleAreaReported = true,
             ),
         )
     }
@@ -139,7 +137,6 @@ class TemplateChoiceTest {
                 surfaceWidthDp = SPLIT_SCREEN_WIDTH_DP,
                 visibleAreaEmpty = false,
                 screenStarted = true,
-                visibleAreaReported = true,
             ),
         )
     }
@@ -158,7 +155,6 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = false,
-                visibleAreaReported = true,
             ),
         )
     }
@@ -173,7 +169,6 @@ class TemplateChoiceTest {
                 surfaceWidthDp = 1024f,
                 visibleAreaEmpty = false,
                 screenStarted = true,
-                visibleAreaReported = true,
             ),
         )
     }

@@ -241,10 +241,22 @@ fun mirrorPlayback(
             // playback-state actions, so copying the advertised
             // actions left the mirror with no skip buttons at all and
             // the car fell back to 10s rewind/fast-forward. The card
-            // gets previous/next; seek still follows the transport.
+            // gets previous/next.
             skipPrevious = true,
             skipNext = true,
-            seek = snapshot.transport.seek,
+            // Seek is NOT advertised, even though Poweramp accepts
+            // one. While the published mask contained ACTION_SEEK_TO,
+            // this car rendered the 10-second rewind/fast-forward
+            // pair on the card instead of the skip buttons — the
+            // seek actions are the ones it prefers when a session
+            // offers both (v1.0.14–v1.0.19 all shipped a mask with
+            // seek in it, and all showed 10s). The mirror's mask is
+            // therefore exactly play/pause + skip previous + skip
+            // next, so the skip pair is the only directional choice
+            // the card has. The session callback still forwards a
+            // seek if a host sends one anyway; it is simply never
+            // offered.
+            seek = false,
         ),
     )
 }

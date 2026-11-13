@@ -9,6 +9,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -59,6 +62,25 @@ class LocalLyricsProvider(
     val isConfigured: Boolean get() = hasFolder()
 
     var noMatchReason: String? = null
+
+    private val _indexVersion = MutableStateFlow(0L)
+
+    /**
+     * Bumped every time the served index is REPLACED by a freshly
+     * walked one — the cold walk in [ensureIndex] and the background
+     * rebuild after a disk cache was served. Serving the disk cache
+     * itself does not bump: fetches use that index directly, and it
+     * is the walk landing afterwards whose contents they may have
+     * missed. The app collects this and re-runs the current track's
+     * lookup (see LyricsEngine.refresh): a lookup answered by a
+     * stale index — a miss for a file the fresh walk does find —
+     * otherwise stands until the track changes, because the engine
+     * only fetches on a track change. That is how the "不再犹豫"
+     * miss (2026-11-12) survived the user's track switches: both
+     * switches were answered by the not-yet-rebuilt index, and once
+     * the rebuild landed nothing ever looked the track up again.
+     */
+    val indexVersion: StateFlow<Long> = _indexVersion.asStateFlow()
 
     private val indexMutex = Mutex()
 
@@ -229,6 +251,7 @@ class LocalLyricsProvider(
             }
             lastIndexError = false
             cachedIndex = index
+            _indexVersion.value += 1
             if (uri != null) {
                 saveCachedIndex(uri, index)
             }
@@ -366,6 +389,7 @@ class LocalLyricsProvider(
                 val built = indexMutex.withLock { walkFolder() }
                 if (built != null && folderUri() == rebuildFolderUri) {
                     cachedIndex = built
+                    _indexVersion.value += 1
                     saveCachedIndex(rebuildFolderUri, built)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {

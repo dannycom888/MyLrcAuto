@@ -3,6 +3,7 @@ package com.dannycom888.mylrcauto.lyrics
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 
 /**
  * Pure filename matching for local `.lrc` files.
@@ -359,19 +360,76 @@ object LocalLyricsMatcher {
     }
 
     /**
-     * Decodes `.lrc` bytes as UTF-8 first; when the bytes are not valid UTF-8,
-     * decodes them as GBK instead (common for Chinese `.lrc` files saved on
-     * Windows). A leading byte-order mark is removed.
+     * Decodes `.lrc` bytes to text.
+     *
+     * Order: a UTF-16 byte-order mark first (FF FE → little-endian,
+     * FE FF → big-endian) — a Windows editor's "Unicode" save is the
+     * common source, and players that sniff the mark (Poweramp) show
+     * such a file's lyrics fine. Then strict UTF-8, then GBK (common
+     * for Chinese `.lrc` files saved on Windows). A leading UTF-8
+     * byte-order mark is removed.
+     *
+     * The mark matters because a UTF-16 file run through the UTF-8 /
+     * GBK path does not fail — it decodes into NUL-interleaved
+     * garbage (every ASCII byte gains a NUL partner; NUL is a valid
+     * byte in both decodings, so no exception ever routes to a
+     * fallback), no time tag ever matches, and the file reads as
+     * untimed. The same tell catches mark-less UTF-16: real `.lrc`
+     * text never contains NUL, so a decode that has them is retried
+     * as UTF-16 (little-endian first, the common save) and the clean
+     * decode wins.
      */
     fun decodeBytes(bytes: ByteArray): String {
-        val utf8 = Charset.forName("UTF-8")
-        val decoded = try {
-            utf8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
-        } catch (_: CharacterCodingException) {
-            Charset.forName("GBK").newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+        if (bytes.size >= 2) {
+            val b0 = bytes[0].toInt() and 0xFF
+            val b1 = bytes[1].toInt() and 0xFF
+            if (b0 == 0xFF && b1 == 0xFE) return decodeUtf16(bytes, Charsets.UTF_16LE)
+            if (b0 == 0xFE && b1 == 0xFF) return decodeUtf16(bytes, Charsets.UTF_16BE)
         }
-        return decoded.removePrefix("\uFEFF")
+        // Every strict attempt is failure-tolerant: a candidate that
+        // does not decode cleanly is skipped, never thrown — the
+        // first version of this chain let the GBK fallback itself
+        // throw on mark-less UTF-16 bytes (malformed as GBK too),
+        // which escaped as an exception instead of reaching the
+        // UTF-16 retry below.
+        val utf8Text = strictDecode(bytes, Charsets.UTF_8)
+        if (utf8Text != null && utf8Text.indexOf('\u0000') < 0) {
+            return utf8Text.removePrefix("\uFEFF")
+        }
+        val gbkText = strictDecode(bytes, Charset.forName("GBK"))
+        if (gbkText != null && gbkText.indexOf('\u0000') < 0) {
+            return gbkText.removePrefix("\uFEFF")
+        }
+        // A decode that "succeeded" but is full of NULs was UTF-16
+        // without a mark (or bytes neither UTF-8 nor GBK fits). The
+        // timestamps every .lrc carries are ASCII, so the GBK read
+        // of UTF-16 bytes is NUL-riddled too and never wins above;
+        // the clean UTF-16 retry does.
+        for (charset in listOf(Charsets.UTF_16LE, Charsets.UTF_16BE)) {
+            val retried = strictDecode(bytes, charset) ?: continue
+            if (retried.indexOf('\u0000') < 0) return retried.removePrefix("\uFEFF")
+        }
+        // Nothing decoded cleanly: a lossy UTF-8 read rather than an
+        // exception — a corrupt file parses to no timed lines and is
+        // simply not shown.
+        return utf8Text?.removePrefix("\uFEFF") ?: String(bytes, Charsets.UTF_8)
     }
+
+    /** Strictly decodes, or null when the bytes are not valid in [charset]. */
+    private fun strictDecode(bytes: ByteArray, charset: Charset): String? =
+        try {
+            charset.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (_: CharacterCodingException) {
+            null
+        }
+
+    /** Decodes UTF-16 bytes in the given endianness, dropping the decoded mark. */
+    private fun decodeUtf16(bytes: ByteArray, charset: Charset): String =
+        String(bytes, charset).removePrefix("\uFEFF")
 
     /**
      * Parses `.lrc` bytes into a [LyricsDocument], or null when the file has

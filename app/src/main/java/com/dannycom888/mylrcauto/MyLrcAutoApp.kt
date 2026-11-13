@@ -141,6 +141,23 @@ class MyLrcAutoApp : Application() {
                     .collect { track -> lyrics.setTrack(track) }
             }
 
+            // A lookup answered by a stale index must not stand. The
+            // first lookup in a fresh process is served by the
+            // disk-cached index, which the background rebuild then
+            // replaces with a fresh walk (LocalLyricsProvider bumps
+            // indexVersion when it lands) — and the hook above only
+            // fires on a track change, so a track the stale index
+            // missed would never be looked up again. When the index
+            // is replaced, look the current track up again. The
+            // initial value is dropped: nothing has been replaced
+            // yet at startup, and the first fetch uses whatever
+            // index is current when it runs.
+            scope.launch {
+                localFolderLyrics.indexVersion
+                    .drop(1)
+                    .collect { lyrics.refresh() }
+            }
+
             // The mirror media session (v1.0.13): the dashboard card is
             // drawn from the active media session, and the car host only
             // binds LyricsMediaService when the user selects it — but

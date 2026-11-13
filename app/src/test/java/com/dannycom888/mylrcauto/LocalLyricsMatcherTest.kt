@@ -179,6 +179,49 @@ class LocalLyricsMatcherTest {
     }
 
     @Test
+    fun decodeBytesHandlesUtf16WithBom() {
+        // A .lrc saved as UTF-16 (the Windows Notepad "Unicode" save)
+        // carries a byte-order mark. Run through a UTF-8/GBK decode it
+        // comes out as NUL-interleaved garbage, no time tag ever
+        // matches, and the file reads as untimed — while a player that
+        // sniffs the BOM (Poweramp) shows its lyrics fine. The decode
+        // must honour the mark, both endiannesses.
+        val text = "[00:01.00]只想靠两手\n[00:05.00]向理想挥手"
+        val le = byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+            text.toByteArray(Charsets.UTF_16LE)
+        assertEquals(text, LocalLyricsMatcher.decodeBytes(le))
+
+        val be = byteArrayOf(0xFE.toByte(), 0xFF.toByte()) +
+            text.toByteArray(Charsets.UTF_16BE)
+        assertEquals(text, LocalLyricsMatcher.decodeBytes(be))
+    }
+
+    @Test
+    fun decodeBytesHandlesUtf16LeWithoutBom() {
+        // UTF-16LE saved without a mark: the UTF-8 decode "succeeds"
+        // (NUL is a valid UTF-8 byte), so the GBK fallback never runs
+        // and the text stays NUL-interleaved. The NULs are the tell —
+        // no real .lrc text contains them — so the decode retries as
+        // UTF-16 and keeps the clean result.
+        val text = "[00:01.00]只想靠两手"
+        val le = text.toByteArray(Charsets.UTF_16LE)
+        assertEquals(text, LocalLyricsMatcher.decodeBytes(le))
+    }
+
+    @Test
+    fun parseBytesReadsUtf16Lrc() {
+        // End to end: a UTF-16LE+BOM .lrc parses to timed lines, the
+        // same answer the UTF-8 original gives.
+        val text = "[00:01.00]只想靠两手\n[00:05.50]向理想挥手"
+        val bytes = byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+            text.toByteArray(Charsets.UTF_16LE)
+        val doc = LocalLyricsMatcher.parseBytes(bytes, "Beyond - 不再犹豫.lrc")
+        assertEquals(2, doc?.lines?.size)
+        assertEquals(1_000L, doc?.lines?.first()?.timeMs)
+        assertEquals("只想靠两手", doc?.lines?.first()?.text)
+    }
+
+    @Test
     fun parseBytesReturnsDocumentOrNull() {
         val doc = LocalLyricsMatcher.parseBytes(
             "[00:01.00]第一行\n[00:05.00]第二行".toByteArray(Charsets.UTF_8),
@@ -225,6 +268,51 @@ class LocalLyricsMatcherTest {
         assertNull(
             LocalLyricsMatcher.matchLrc(files, audio("不存在的歌.mp3")),
         )
+    }
+
+    @Test
+    fun subfolderSameStemBeyondBuZaiYouYu() {
+        // User report 2026-11-12: "Beyond - 不再犹豫.lrc" sits in the
+        // Music/music chinese boy SUBFOLDER next to "Beyond -
+        // 不再犹豫.mp3" — same stem, same folder — Poweramp shows the
+        // lyrics, My LRC Auto showed none, and switching tracks away
+        // and back did not help. The index is name-flat: the walk
+        // recurses into subfolders and stores bare file names, so a
+        // subfolder pair is indistinguishable from a root pair here —
+        // which is the point: if this pipeline finds the file, the
+        // miss cannot be in the matching, and subfolder coverage is
+        // purely a property of the walk. The entries are indexed
+        // exactly as LocalLyricsProvider.walkFolder indexes them,
+        // with decoys as if from the sibling subfolders.
+        val lrcIndex = indexedLrc(
+            "Beyond - 不再犹豫.lrc",
+            "Beyond - 喜欢你.lrc",
+            "汪峰 - 北京北京.lrc",
+            "不再犹豫 (Live).lrc",
+        )
+        val audioIndex = indexedAudio(
+            "Beyond - 不再犹豫.mp3",
+            "Beyond - 喜欢你.mp3",
+            "汪峰 - 北京北京.mp3",
+        )
+
+        // Provider step 1, in its own order: find the audio file,
+        // take the same-stem .lrc, verify its title (v1.0.19's guard
+        // must NOT reject this file — its title part is the title).
+        val audioFile = LocalLyricsMatcher.findAudioFile(
+            "不再犹豫", listOf("Beyond"), audioIndex,
+        )
+        assertEquals("Beyond - 不再犹豫.mp3", audioFile?.file?.fileName)
+        val sameStem = LocalLyricsMatcher.sameStemLrc(audioFile!!, lrcIndex)
+        assertEquals("Beyond - 不再犹豫.lrc", sameStem?.file?.fileName)
+        assertTrue(
+            LocalLyricsMatcher.lrcTitleMatches("Beyond - 不再犹豫.lrc", "不再犹豫"),
+        )
+
+        // Provider step 2 (the metadata fallback) would find it too:
+        // it ranks first, ahead of the "(Live)" title-only decoy.
+        val matched = LocalLyricsMatcher.match("不再犹豫", listOf("Beyond"), lrcIndex)
+        assertEquals("Beyond - 不再犹豫.lrc", matched.firstOrNull()?.file?.fileName)
     }
 
     @Test

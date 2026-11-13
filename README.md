@@ -1,8 +1,15 @@
-# My LRC Auto 1.0.19
+# My LRC Auto 1.0.20
 
 An original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on the phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.20
+
+- **Big screen always shows content — no more endless spinner**: in 1.0.19 the big screen could sit on a loading spinner forever. Cause, found in the code: the template choice waited for the car to report the surface's visible area before switching to the surface template, but the car only reports that area once the surface template is already on screen — so the surface was unreachable for the whole session, and the screen stayed on the pane fallback. Worse, that fallback answered a still-running lookup (and any failed template build) with a loading pane that nothing ever replaced. Now the surface template is chosen as soon as the other checks pass (the lyrics themselves still wait for the area before drawing — black until then, no shift), a lookup still in progress shows the title/artist pane, and a failed build falls back to the pane content that worked in 1.0.18 (title + lyric lines). No error text, ever, and no loading state that can sit forever. Needs a car test to confirm.
+- **Card buttons: publish before activate, and no seek in the mask**: 1.0.19's card still showed 10s. Two defects in the 1.0.19 shape, both fixed. (1) Its service-start path copied AALyrics' order — activate first, publish after — but AALyrics' host binds the service and is subscribed before activation, while this car discovers the session through the active-session list: on the common path (the service starts while a song is already playing) the host's first read landed the moment the session went active and found no playback state at all, which it renders as the default 10s card and never revisits. The start path now publishes the complete state first and activates second — the order the render loop always used. (2) The published mask no longer contains seek: while `ACTION_SEEK_TO` was in the mask, this car preferred the 10-second seek pair over the skip buttons; the mask is now exactly play/pause + previous + next, nothing else. A seek is still forwarded if a host sends one. Needs a car test to confirm.
+- **A stale index can no longer hide a song's lyrics for good**: the first lookup in a fresh process is answered by the on-disk cached index, and when the background rebuild replaced it with a fresh walk, nothing re-ran the lookup — a song the cached index missed stayed missed until the track changed (this is the "不再犹豫" report; the file itself, its name matching and the whole lookup chain were verified good in tests using the user's actual file — what differed was which index answered). The provider now reports every index replacement and the app re-looks-up the playing track automatically; a manual rescan also re-checks the playing song now. Separately, `.lrc` files saved as UTF-16 (a common Windows editor save) now decode and show, instead of reading as untimed.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.19
 
@@ -128,11 +135,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 149 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 157 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.19 (versionCode 21), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.20 (versionCode 22), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 
@@ -149,6 +156,13 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
+
+## v1.0.20 变化
+
+- **大屏永远有内容——不再无限转圈**：1.0.19 的大屏会一直停在加载转圈。原因在代码里找到了：模板选择要等车机报出画面可见区域之后才换成画面模板，可车机只有在这个模板已经上屏之后才报可见区域——于是整个会话都够不到画面模板，屏幕只能停在备用窗格上；而备用路径在歌词还在查找、或者模板构建失败时，返回的都是一个永远不会被替换的加载窗格。现在其他条件一通过就换画面模板（歌词本身还是等可见区域报出来再画——之前黑屏，不移位），查找进行中显示歌名/歌手窗格，构建失败退到 1.0.18 能用的窗格内容（歌名 + 歌词行）。任何时候不显示错误文字，也没有会永远停住的加载状态。需实车验证。
+- **卡片按钮：先发布再激活，且按钮集合不再带进度拖动**：1.0.19 的卡片还是 10 秒。1.0.19 的做法里有两个毛病，都修了。（1）服务启动那条路照抄了 AALyrics 的顺序——先激活再发布，但 AALyrics 的车机是先绑定服务、先订阅好的，这台车机是从系统的活跃会话列表里发现会话的：常见情况下（服务启动时歌已经在放）车机在会话刚激活那一刻的第一次读取什么播放状态都没读到，就按默认画了 10 秒卡片、之后再也不改。启动路径现在改成先发布完整状态再激活，和渲染循环一直用的顺序一致。（2）发布的按钮集合不再包含 seek：只要集合里有 `ACTION_SEEK_TO`，这台车机就优先画 10 秒快退/快进、不用跳歌按钮；现在集合正好就是播放/暂停 + 上一首 + 下一首，没有别的。车机真发来 seek 时仍会转发。需实车验证。
+- **旧索引再也不会把一首歌的歌词永久藏住**：新进程的第一次查找用的是硬盘上的缓存索引，后台重扫用新索引把它替换掉时，以前没有任何东西会重查一次——缓存索引漏掉的歌，要等到换歌才有机会（这就是《不再犹豫》那次：文件本身、文件名匹配和整条查找链都用用户真实文件在测试里验证过没问题，差别只在当时是哪个索引在回答）。现在索引每次被替换都会通知 App，正在放的歌自动重查；手动点重扫也会顺带重查正在放的歌。另外，存成 UTF-16 的 `.lrc` 文件（Windows 编辑器常见存法）现在能正常解码显示，不再被读成无时间轴。
+- **图标不变**（v22）。
 
 ## v1.0.19 变化
 
@@ -284,11 +298,11 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 141 个测试，0 失败
+gradle_build :app:testDebugUnitTest   # 157 个测试，0 失败
 gradle_build :app:assembleRelease    # 签名用共享 keystore
 ```
 
-- 包名 `com.dannycom888.mylrcauto`，版本 1.0.18（versionCode 20），minSdk 26
+- 包名 `com.dannycom888.mylrcauto`，版本 1.0.20（versionCode 22），minSdk 26
 - 签名与 MyLyrics / Melisma 本地版共用同一把 key（`aalyrics-local`）
 - 源码：`~/workspace/my-lrc-auto/mylrcauto`，记录：`~/workspace/my-lrc-auto/TASK.md`
 
