@@ -42,6 +42,24 @@
     <string name="settings_keep_screen_on_summary">The screen stays on while lyrics are showing.</string>
     <string name="settings_about">My LRC Auto — local lyrics only, no network.</string>
     <string name="settings_version">Version %1$s</string>
+    <string name="settings_diag_title">Last car launch</string>
+    <string name="settings_diag_none">No car launch recorded yet</string>
+    <string name="settings_diag_time">Time</string>
+    <string name="settings_diag_entry">Entry</string>
+    <string name="settings_diag_entry_create">New session</string>
+    <string name="settings_diag_entry_intent">New intent (session already running)</string>
+    <string name="settings_diag_action">Action</string>
+    <string name="settings_diag_categories">Categories</string>
+    <string name="settings_diag_extras">Extras</string>
+    <string name="settings_diag_flags">Flags</string>
+    <string name="settings_diag_mirror">Card already showing</string>
+    <string name="settings_diag_shown">Big screen already shown this connection</string>
+    <string name="settings_diag_decision">Result</string>
+    <string name="settings_diag_decision_big">Big screen opened</string>
+    <string name="settings_diag_decision_dash">Back to dashboard (card only)</string>
+    <string name="settings_diag_empty_value">(none)</string>
+    <string name="settings_diag_yes">Yes</string>
+    <string name="settings_diag_no">No</string>
 
     <string name="car_silent">Nothing playing</string>
     <string name="car_silent_body">Start a song in Poweramp and the words will show here.</string>

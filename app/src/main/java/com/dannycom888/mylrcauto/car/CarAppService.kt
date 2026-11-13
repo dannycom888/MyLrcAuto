@@ -37,21 +37,15 @@ class CarAppService : androidx.car.app.CarAppService() {
     }
 
     override fun onCreateSession(): Session {
-        // A car session is live from here: the mirror may run (see
-        // MirrorActivation — v1.0.18 gates it on a live car session,
-        // because a mirror running with no car present blocked the
-        // wireless Android Auto connection). The flag is set before
-        // anything else, so the snapshot hook's combined flow can
-        // start the service as soon as a track is loaded.
         val app = applicationContext as MyLrcAutoApp
-        runCatching { app.container.setCarSessionLive(true) }
-        // Item-7 diagnostic (v1.0.19): whether the mirror session
-        // was already active BEFORE this session was created — read
-        // before the start below, so it cannot be this launch's own
-        // start. A card tap can only happen while the card is already
-        // showing, which needs an active mirror; a cold icon tap
-        // never has one. Passed to the session for the log in
-        // onCreateScreen; not acted on (see describeLaunchIntent).
+        // Item-7 diagnostic (v1.0.19), now a decision input (v1.0.21):
+        // whether the mirror session was already active BEFORE this
+        // session was created — read before the start below, so it
+        // cannot be this launch's own start. A card tap can only
+        // happen while the card is already showing, which needs an
+        // active mirror; a cold icon tap never has one. Passed to
+        // the session, which feeds it to the launch decision (see
+        // LaunchDecision.kt).
         val mirrorAlreadyActive = LyricsMediaService.isSessionActive
         // The car app is the foreground app from here, so starting the
         // mirror service is allowed — where the snapshot hook's
@@ -62,8 +56,9 @@ class CarAppService : androidx.car.app.CarAppService() {
         // Guarded: session creation must never throw — a throw here
         // takes the whole car app down at the moment the car opens
         // it, and a mirror that fails to start is not worth that.
-        // The snapshot hook is the backstop: it starts the service
-        // as soon as the flag above is set and a track is loaded.
+        // The snapshot hook is the backstop: gated on the projection
+        // connection (v1.0.21), it starts the service as soon as the
+        // car is connected and a track is loaded.
         runCatching {
             startMirrorFromCarApp(app.container.media.snapshot.value) {
                 MirrorServiceControl.start(applicationContext)

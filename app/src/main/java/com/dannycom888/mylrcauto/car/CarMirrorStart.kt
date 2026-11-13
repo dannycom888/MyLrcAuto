@@ -32,6 +32,14 @@ import com.dannycom888.mylrcauto.media.PlayerSnapshot
  * construction here. The snapshot hook is the one that needed the
  * explicit gate, because it fires with no car anywhere.
  *
+ * v1.0.21: the gate is the projection connection now, and a session
+ * existing still implies one — so "met by construction" still
+ * holds. Note the finish path of the two-tap flow deliberately
+ * does NOT come through here: an icon launch that is about to
+ * finish does not need a mirror start of its own, because the
+ * projection-gated snapshot hook owns the mirror for the whole
+ * connection.
+ *
  * Pure apart from the lambda the caller supplies, so the decision is
  * unit-testable without a Context.
  */

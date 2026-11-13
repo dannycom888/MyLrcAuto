@@ -1,8 +1,15 @@
-# My LRC Auto 1.0.20
+# My LRC Auto 1.0.21
 
 An original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on the phone and on the Android Auto head unit. No network, no online lyric lookup.
 
 This software was made with Muse's assistance.
+
+## What's new in 1.0.21
+
+- **Two-tap flow, like the media apps: icon → card, card → big screen**: Poweramp and the other media apps on the user's car all open the small dashboard card first and the big screen only when the card is tapped. They get that for free — the car draws their screens — while this app is a template app, so the car used to hand it the big screen on the first tap. Now an icon tap finishes the car app straight back to the dashboard (map + card), and only a launch judged to come from the card opens the big screen. To make that survivable, the mirror session (which the card is drawn from) is no longer tied to the template session — it is gated on the car connection itself (the CarConnection projection state, the pattern AALyrics uses), so it starts when the car connects, keeps the card alive across icon-tap finishes all drive long, and stops when the car disconnects. With no car connected it never runs, so the wireless Android Auto handshake protection from 1.0.18 is unchanged. **Honest caveat**: the Car App Library gives no signal that tells an icon tap from a card tap — the judgment uses the launch intent's shape (anything beyond a plain launcher intent counts as card-driven) gated on the card already being up, which is a heuristic until the car test confirms what this head unit actually sends. If card taps turn out to arrive exactly like icon taps, they will finish to the dashboard too — which is why the next item exists.
+- **Settings shows the last car launch**: every car launch is recorded (time, new session or new intent, the intent's action/categories/extras/flags, whether the card was already showing, and what was decided — big screen or back to dashboard) and shown in a compact "Last car launch" block in Settings. Screenshot it after an icon tap and again after a card tap, and the two records settle whether this head unit sends the two taps differently.
+- **Includes everything in 1.0.20** (below), which was never published on its own: the big-screen spinner fix, the card publish-order and mask fix, and the stale-index re-lookup.
+- **Icon unchanged** (v22).
 
 ## What's new in 1.0.20
 
@@ -135,11 +142,11 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 ```bash
 source ~/workspace/aalyrics-local/tools/env.sh
 cd ~/workspace/my-lrc-auto/mylrcauto
-gradle_build :app:testDebugUnitTest   # 157 tests, 0 failures
+gradle_build :app:testDebugUnitTest   # 174 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.20 (versionCode 22), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.21 (versionCode 23), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 
@@ -156,6 +163,13 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
+
+## v1.0.21 变化
+
+- **两步打开，和其他媒体软件一样：点图标→小卡片，点卡片→大屏**：用户车上的 Poweramp 和其他媒体软件都是先出仪表盘小卡片、点卡片才进大屏。它们是车机替它们画界面，所以天然如此；这个软件是自己画大屏的模板型软件，以前一点图标车机就直接把大屏交过来。现在点图标会立刻退回仪表盘（地图 + 卡片），只有判定为从卡片来的打开才进大屏。为了让卡片在退出后还活着，镜像会话（卡片就是靠它画的）不再绑在模板会话上，改成看车机连接本身（CarConnection 的投屏状态，AALyrics 用的就是这个办法）：车一连上它就启动，整个开车过程里点图标退多少次卡片都还在，车一断开它就停。没有车的时候它绝不运行，所以 1.0.18 修的无线 Android Auto 连接保护不变。**实话说明**：车机库根本不提供“点的是图标还是卡片”这个信号——现在的判定用的是打开意图的形状（超出普通图标启动意图的任何东西算作卡片来的），再加上卡片必须已经在显示这个前提；在实车验证这台车机到底发什么之前，这只能算一个有依据的猜法。如果点卡片发来的意图和点图标一模一样，点卡片也会退回仪表盘——所以才有下面这一项。
+- **设置里能看“上次在车上打开”**：每次在车上打开都会记录下来（时间、新建会话还是已有会话的意图、意图的 action/categories/extras/flags、卡片当时是否已在显示、最后的决定——打开大屏还是退回仪表盘），在设置的“上次在车上打开”一栏里紧凑显示。点图标后截一张、点卡片后截一张，两下对比就能定这台车机发的两种意图到底有没有区别。
+- **包含 1.0.20 的全部内容**（见下）：1.0.20 没有单独发布过——大屏转圈修复、卡片发布顺序与按钮集合修复、旧索引自动重查，都在本版里。
+- **图标不变**（v22）。
 
 ## v1.0.20 变化
 

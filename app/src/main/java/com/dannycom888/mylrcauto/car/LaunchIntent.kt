@@ -2,7 +2,8 @@ package com.dannycom888.mylrcauto.car
 
 /**
  * Describing the intent a car session was launched with — the item-7
- * diagnostic (v1.0.19).
+ * diagnostic (v1.0.19), now the log half of the v1.0.21 launch
+ * decision.
  *
  * The user wants one tap on the app icon to show only the small card
  * (dashboard: map + media card) and a tap on the card to open the big
@@ -21,27 +22,21 @@ package com.dannycom888.mylrcauto.car
  *   and its now-playing screen from the MediaSession and there is
  *   no CarAppService screen to open.
  * - Even with a distinguisher, finishing the icon launch
- *   (`CarContext.finishCarApp`) destroys the session — the AIDL
- *   has no explicit session-destroy call; a session dies only when
- *   the host unbinds (per session) or the service is destroyed —
- *   and the current code stops the mirror media session in the
- *   session's onDestroy, so the card would die with it. Keeping
- *   the mirror alive after a finish while stopping it when the
- *   car disconnects has no library-level signal either: the
- *   service's onDestroy fires in both cases. A delayed stop is
- *   not the answer — the card has to survive a whole drive, not
- *   a few seconds.
+ *   (`CarContext.finishCarApp`) destroys the session, and until
+ *   v1.0.21 the mirror media session was stopped in the session's
+ *   onDestroy, so the card would have died with it.
  *
- * So v1.0.19 does not implement the two-tap flow. What it does is
- * record the launch intent (and whether the mirror session was
- * already active) in the log, so the follow-up is built on what
- * the user's car actually sends instead of on a guess: if the
- * intents do differ, the follow-up can key the finish on that;
- * if they do not, the follow-up needs a session-activity marker
- * plus a car-gone detector (Bluetooth/USB disconnect) before the
- * finish is safe to add. Until then the flow stays as it is:
- * icon tap opens the big screen, Home/BACK returns to the
- * dashboard with the card, card tap reopens the big screen.
+ * v1.0.19 only recorded the launch intent (and whether the mirror
+ * session was already active) in the log. v1.0.21 acts on it: the
+ * mirror is decoupled from the template session (gated on the
+ * CarConnection projection state instead), so finishing an icon
+ * launch no longer kills the card, and [decideLaunch] finishes
+ * every launch that is not judged card-driven. The judgment is a
+ * heuristic — see `LaunchDecision.kt` for exactly which signal
+ * carries it and what remains unproven — and every launch is
+ * still logged with this description, plus stored for the phone's
+ * Settings screen (`LaunchDiagnostics.kt`), so the user's car
+ * test settles what his head unit actually sends.
  *
  * Pure string formatting, so the description is unit-testable
  * without an Android runtime: the session extracts the strings

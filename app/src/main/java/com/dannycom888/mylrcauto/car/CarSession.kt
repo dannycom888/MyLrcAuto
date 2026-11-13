@@ -1,6 +1,8 @@
 package com.dannycom888.mylrcauto.car
 
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.car.app.AppManager
 import androidx.car.app.Screen
@@ -13,21 +15,25 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.MyLrcAutoApp
+import com.dannycom888.mylrcauto.media.LyricsMediaService
 import com.dannycom888.mylrcauto.media.MirrorServiceControl
 
 /**
  * One connection to a car, for as long as it lasts.
  *
- * [mirrorAlreadyActive] is the item-7 diagnostic (v1.0.19): whether
- * the mirror media session was already active before this session
- * was created — read in [CarAppService.onCreateSession] before the
- * mirror is started, so it cannot be this launch's own start. A
- * card tap can only happen while the card is already showing, which
- * needs an active mirror session; a cold icon tap never has one.
- * It is logged in [onCreateScreen], not acted on: the library gives
- * no reliable way to finish an icon launch without also killing
- * the card (see [describeLaunchIntent]), so v1.0.19 records the
- * facts for the follow-up instead of guessing.
+ * [mirrorAlreadyActive] is the item-7 signal: whether the mirror
+ * media session was already active before this session was created
+ * — read in [CarAppService.onCreateSession] before the mirror is
+ * started, so it cannot be this launch's own start. A card tap can
+ * only happen while the card is already showing, which needs an
+ * active mirror session; a cold icon tap never has one. v1.0.19
+ * only logged it; v1.0.21 feeds it to the launch decision
+ * ([decideLaunch]): a launch that is not judged card-driven
+ * finishes the car app at once, so an icon tap lands the user
+ * back on the dashboard — the two-tap flow every media app on
+ * the user's car has. The card survives the finish because the
+ * mirror is gated on the projection connection, not on this
+ * session (see MirrorActivation).
  *
  * One thing happens here that the phone's activity normally does, because a
  * car screen can be the *only* thing that ever opens this app — plug the
@@ -69,33 +75,31 @@ class CarSession(
     override fun onCreateScreen(intent: Intent): Screen {
         val app = container
 
-        // Item-7 diagnostic (v1.0.19): what the host launched us with,
-        // and whether the mirror was already active — the two facts
-        // the follow-up needs to tell an icon tap from a card tap.
-        // Logged, not acted on: the library gives no reliable way to
-        // finish an icon launch without also killing the card (see
-        // describeLaunchIntent), so this version records the facts
-        // instead of guessing.
+        // Item 7 (v1.0.21): decide what this launch is before doing
+        // any of the big screen's work. mirrorAlreadyActive was
+        // read in onCreateSession, before this launch could start
+        // the mirror; the intent fields are the only other evidence
+        // there is. The decision, its inputs and the raw intent are
+        // logged AND stored for the phone's Settings screen — the
+        // stored record is how the user's car test settles what
+        // his head unit sends for an icon tap vs a card tap.
+        val signals = LaunchSignals(
+            entry = LaunchEntry.CREATE_SCREEN,
+            intentAction = intent.action,
+            intentCategories = intent.categories.orEmpty(),
+            intentExtrasKeys = intent.extras?.keySet().orEmpty(),
+            mirrorAlreadyActive = mirrorAlreadyActive,
+            bigScreenShownThisConnection = app.launchConnectionState.bigScreenShown,
+        )
+        val decision = decideLaunch(signals)
+        recordLaunch(app, signals, intent.flags, decision)
         Log.i(
             TAG,
             describeLaunchIntent(intent.action, intent.categories, intent.extras?.keySet()) +
-                " mirrorAlreadyActive=$mirrorAlreadyActive",
+                " mirrorAlreadyActive=$mirrorAlreadyActive" +
+                " bigScreenShown=${signals.bigScreenShownThisConnection}" +
+                " -> $decision",
         )
-
-        // The car session is live (also set in onCreateSession — this
-        // is the backstop for a session created any other way). The
-        // mirror gate reads this flag, so the service only runs while
-        // the car is actually connected.
-        app.setCarSessionLive(true)
-
-        // The main screen is created: the car app is the foreground app,
-        // so starting the mirror service is allowed here too — the same
-        // start the session creation already attempted, and the snapshot
-        // hook's background start may have been blocked (v1.0.13).
-        // Starting an already-running service is a no-op.
-        startMirrorFromCarApp(app.media.snapshot.value) {
-            MirrorServiceControl.start(carContext.applicationContext)
-        }
 
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
@@ -104,21 +108,46 @@ class CarSession(
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
-                // The car is gone: the mirror stops with the session.
-                // v1.0.18 — the service must never outlive the car
-                // connection, or its active media session is still
-                // held the next time the phone tries to connect
-                // wirelessly. The snapshot hook's combined flow fires
-                // the same STOP when the flag flips, but this direct
-                // stop does not depend on that flow being collected.
-                // Logged for the item-7 follow-up: a session destroyed
-                // right after an icon launch is what would kill the
-                // card if that launch were finished.
-                Log.i(TAG, "car session destroyed, stopping the mirror")
-                app.setCarSessionLive(false)
-                MirrorServiceControl.stop(carContext.applicationContext)
+                // Deliberately NOT stopping the mirror (v1.0.21):
+                // sessions now end on purpose — every icon tap
+                // finishes one — while the car stays connected, and
+                // the card must outlive them all. The mirror stops
+                // when the projection disconnects, through the
+                // CarConnection gate in the container's snapshot
+                // hook. (v1.0.18 stopped it here; that coupling is
+                // exactly what item 7 had to break.)
+                Log.i(TAG, "car session destroyed (the mirror is projection-gated and keeps running)")
             }
         })
+
+        if (decision == LaunchDecision.FINISH_TO_DASHBOARD) {
+            // Land back on the dashboard: finish the car app as
+            // soon as this call has returned and the session exists
+            // for the host to end. The screen returned below is a
+            // placeholder for the moment in between — and the
+            // fail-open fallback if a host ever refuses the finish:
+            // the user then gets the big screen, exactly the
+            // pre-item-7 behaviour, instead of a stuck app.
+            Handler(Looper.getMainLooper()).post {
+                runCatching { carContext.finishCarApp() }
+                    .onFailure { Log.w(TAG, "finishCarApp failed; staying on the big screen", it) }
+            }
+            return CarLyricsScreen(carContext, app, surface)
+        }
+
+        app.launchConnectionState.onBigScreenShown()
+
+        // The main screen is being shown: the car app is the
+        // foreground app, so starting the mirror service is allowed
+        // here — the same start session creation already attempted,
+        // and the snapshot hook's background start may have been
+        // blocked (v1.0.13). Starting an already-running service is
+        // a no-op. (The finish path above skips this on purpose:
+        // the projection-gated hook owns the mirror for the whole
+        // connection, and an icon launch needs no start of its own.)
+        startMirrorFromCarApp(app.media.snapshot.value) {
+            MirrorServiceControl.start(carContext.applicationContext)
+        }
 
         // Asked for once, here, rather than when a screen appears: the host
         // answers whenever it is ready, and a callback registered later can
@@ -141,19 +170,72 @@ class CarSession(
     }
 
     override fun onNewIntent(intent: Intent) {
-        // Item-7 diagnostic (v1.0.19): a new intent for a session
-        // that already exists — e.g. the icon tapped again while the
-        // app is running, or the card tapped while the session is
-        // alive. Logged with the same description as onCreateScreen,
-        // so the follow-up can see whether the two launch sources
-        // ever arrive with different intents. No behaviour change:
-        // the single lyrics screen is the whole app, and the tick
-        // loop already re-reads the playing track.
+        val app = container
+        // The same decision as onCreateScreen, for a session that
+        // already exists — the icon tapped again while the app is
+        // running, or the card tapped while the session is alive.
+        // mirrorAlreadyActive is read now, before anything here
+        // could start the mirror; mid-session it is simply "the
+        // card is up", which is the fact the decision needs.
+        val signals = LaunchSignals(
+            entry = LaunchEntry.NEW_INTENT,
+            intentAction = intent.action,
+            intentCategories = intent.categories.orEmpty(),
+            intentExtrasKeys = intent.extras?.keySet().orEmpty(),
+            mirrorAlreadyActive = LyricsMediaService.isSessionActive,
+            bigScreenShownThisConnection = app.launchConnectionState.bigScreenShown,
+        )
+        val decision = decideLaunch(signals)
+        recordLaunch(app, signals, intent.flags, decision)
         Log.i(
             TAG,
             "new intent for live session: " +
-                describeLaunchIntent(intent.action, intent.categories, intent.extras?.keySet()),
+                describeLaunchIntent(intent.action, intent.categories, intent.extras?.keySet()) +
+                " mirrorAlreadyActive=${signals.mirrorAlreadyActive}" +
+                " bigScreenShown=${signals.bigScreenShownThisConnection}" +
+                " -> $decision",
         )
+        when (decision) {
+            LaunchDecision.SHOW_BIG_SCREEN ->
+                // The big screen is this session's only screen and
+                // is already on its stack; the host brings the app
+                // forward itself. Just keep the launch memory true.
+                app.launchConnectionState.onBigScreenShown()
+
+            LaunchDecision.FINISH_TO_DASHBOARD ->
+                // The session is live, so the finish can go out at
+                // once — an icon tap always lands on the dashboard,
+                // even with the big screen already showing.
+                runCatching { carContext.finishCarApp() }
+                    .onFailure { Log.w(TAG, "finishCarApp failed; staying on the big screen", it) }
+        }
+    }
+
+    /**
+     * Store the launch for the phone's Settings diagnostics.
+     * Guarded: a diagnostic must never break a launch.
+     */
+    private fun recordLaunch(
+        app: AppContainer,
+        signals: LaunchSignals,
+        intentFlags: Int,
+        decision: LaunchDecision,
+    ) {
+        runCatching {
+            app.launchDiagnostics.record(
+                LaunchRecord(
+                    timestampMs = System.currentTimeMillis(),
+                    entry = signals.entry,
+                    intentAction = signals.intentAction,
+                    intentCategories = signals.intentCategories,
+                    intentExtrasKeys = signals.intentExtrasKeys,
+                    intentFlags = intentFlags,
+                    mirrorAlreadyActive = signals.mirrorAlreadyActive,
+                    bigScreenShownThisConnection = signals.bigScreenShownThisConnection,
+                    decision = decision,
+                ),
+            )
+        }.onFailure { Log.w(TAG, "could not store the launch diagnostic", it) }
     }
 
     // No media.stop() on destroy either, deliberately: the media repository

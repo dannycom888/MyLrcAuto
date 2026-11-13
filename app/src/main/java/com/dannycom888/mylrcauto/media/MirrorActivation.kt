@@ -37,6 +37,21 @@ import android.util.Log
  * deactivates the session) at once, so the next connection starts
  * clean.
  *
+ * v1.0.21 — the gate moves from the template session to the car
+ * connection itself. Item 7 (two-tap flow) finishes the template
+ * session on every icon tap, and the card must survive that: the
+ * mirror can no longer be tied to a session whose whole point is
+ * to end. The gate is now the projection state of
+ * `androidx.car.app.connection.CarConnection` (the AALyrics
+ * demand-lifecycle pattern): projection connected AND a track
+ * loaded. The v1.0.18 protection is unchanged in effect — before
+ * a projection exists the gate is false, so the mirror still
+ * never runs with no car present and cannot block the wireless
+ * handshake — but a session ending no longer stops it, and a
+ * projection disconnect still does, so the next connection starts
+ * clean. The two-argument [shouldBeActive] keeps its shape; its
+ * boolean now means "projection connected".
+ *
  * The decision ([shouldBeActive]) and the transition tracker
  * ([MirrorActivationTracker]) are pure and unit-tested; the only
  * Android part is [MirrorServiceControl], which performs the actual
@@ -58,7 +73,7 @@ object MirrorActivation {
         snapshot.hasTrack
 
     /**
-     * The mirror is wanted only while a car session is live as well.
+     * The mirror is wanted only while a car is connected as well.
      *
      * v1.0.18: a track loaded is not enough on its own. The service
      * used to start whenever a track was loaded — including with no
@@ -66,10 +81,16 @@ object MirrorActivation {
      * foreground service, blocked the phone's wireless Android Auto
      * connection (uninstalling the app made wireless connect again).
      * The dashboard card is the mirror's only consumer, so without a
-     * car session there is nothing to mirror to; the service stays
-     * stopped and the session stays inactive until the car actually
+     * car there is nothing to mirror to; the service stays stopped
+     * and the session stays inactive until the car actually
      * connects, and stopping on disconnect keeps the next connection
      * clean.
+     *
+     * v1.0.21: [carConnected] is the CarConnection projection state,
+     * not a live template session — the two-tap flow finishes
+     * template sessions on purpose, and the card must outlive them.
+     * Projection connected is still "a car is actually there", so
+     * the no-car protection above is unchanged.
      */
     fun shouldBeActive(snapshot: PlayerSnapshot, carConnected: Boolean): Boolean =
         carConnected && shouldBeActive(snapshot)

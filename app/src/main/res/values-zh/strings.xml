@@ -42,6 +42,24 @@
     <string name="settings_keep_screen_on_summary">显示歌词时，屏幕不会自动熄灭。</string>
     <string name="settings_about">My LRC Auto——只读本地歌词，不联网。</string>
     <string name="settings_version">版本 %1$s</string>
+    <string name="settings_diag_title">上次在车上打开</string>
+    <string name="settings_diag_none">还没有记录</string>
+    <string name="settings_diag_time">时间</string>
+    <string name="settings_diag_entry">入口</string>
+    <string name="settings_diag_entry_create">新建会话</string>
+    <string name="settings_diag_entry_intent">已有会话的新意图</string>
+    <string name="settings_diag_action">Action</string>
+    <string name="settings_diag_categories">Categories</string>
+    <string name="settings_diag_extras">Extras</string>
+    <string name="settings_diag_flags">Flags</string>
+    <string name="settings_diag_mirror">卡片已在显示</string>
+    <string name="settings_diag_shown">本次连接已进过大屏</string>
+    <string name="settings_diag_decision">结果</string>
+    <string name="settings_diag_decision_big">打开大屏</string>
+    <string name="settings_diag_decision_dash">退回仪表盘（只看卡片）</string>
+    <string name="settings_diag_empty_value">（无）</string>
+    <string name="settings_diag_yes">是</string>
+    <string name="settings_diag_no">否</string>
 
     <string name="car_silent">没有在放歌</string>
     <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>

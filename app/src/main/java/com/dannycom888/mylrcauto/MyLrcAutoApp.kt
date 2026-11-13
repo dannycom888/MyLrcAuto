@@ -2,6 +2,11 @@ package com.dannycom888.mylrcauto
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
+import androidx.car.app.connection.CarConnection
+import androidx.lifecycle.Observer
+import com.dannycom888.mylrcauto.car.LaunchConnectionState
+import com.dannycom888.mylrcauto.car.LaunchDiagnosticsStore
 import com.dannycom888.mylrcauto.lyrics.LocalFolderSource
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.lyrics.LyricsEngine
@@ -63,27 +68,50 @@ class MyLrcAutoApp : Application() {
         /** Whether the mirror media service is currently wanted running. */
         private val mirrorActivation = MirrorActivationTracker()
 
-        private val _carSessionLive = MutableStateFlow(false)
+        private val _carProjectionConnected = MutableStateFlow(false)
 
         /**
-         * Whether a car session is currently live — a [com.dannycom888.mylrcauto.car.CarSession]
-         * exists because the car connected and opened the app.
+         * Whether an Android Auto projection is currently connected —
+         * the CarConnection type, mapped to a boolean.
          *
-         * v1.0.18: the mirror gate. The mirror used to start whenever a
-         * track was loaded, with no car anywhere, and its active media
-         * session — held by a foreground service — blocked the phone's
-         * wireless Android Auto connection. The mirror runs only while
-         * this is true; the snapshot hook below combines it with the
-         * track, so disconnecting the car stops the service at once
-         * and the next connection starts with no active session in
-         * the way.
+         * v1.0.18 gated the mirror on a live car *session*; v1.0.21
+         * gates it on the projection itself (the AALyrics
+         * demand-lifecycle pattern). The mirror's only consumer is
+         * the car's dashboard card, and item 7's two-tap flow
+         * finishes the template session on every icon tap — the card
+         * must outlive the session, so the session can no longer be
+         * the gate. Projection connected is still "a car is actually
+         * there": before a projection exists this is false, the
+         * mirror never runs, and the wireless handshake protection
+         * from v1.0.18 (an active session held with no car present
+         * blocked wireless Android Auto) is unchanged. A projection
+         * disconnect flips it false and stops the mirror at once.
          */
-        val carSessionLive: StateFlow<Boolean> = _carSessionLive.asStateFlow()
+        val carProjectionConnected: StateFlow<Boolean> =
+            _carProjectionConnected.asStateFlow()
 
-        /** Called by the car session when it starts and when it ends. */
-        fun setCarSessionLive(live: Boolean) {
-            _carSessionLive.value = live
+        /**
+         * The CarConnection feeding [carProjectionConnected]. Held
+         * in a field (with its observer) for the container's whole
+         * life: the LiveData only keeps delivering while both live.
+         */
+        private var carConnection: CarConnection? = null
+        private val carConnectionObserver = Observer<Int> { type ->
+            val connected = type == CarConnection.CONNECTION_TYPE_PROJECTION
+            _carProjectionConnected.value = connected
+            launchConnectionState.onProjectionChanged(connected)
         }
+
+        /**
+         * Per-connection launch memory for the two-tap decision:
+         * whether the big screen has been shown since the projection
+         * connected. Reset by the CarConnection observer above when
+         * the projection goes away.
+         */
+        val launchConnectionState = LaunchConnectionState()
+
+        /** The most recent car launch's decision inputs and outcome (Settings diagnostics). */
+        val launchDiagnostics: LaunchDiagnosticsStore = LaunchDiagnosticsStore(context)
 
         val settings: SettingsStore = SettingsStore(context)
 
@@ -106,6 +134,19 @@ class MyLrcAutoApp : Application() {
         val lyrics: LyricsEngine = LyricsEngine(scope, localFolderLyrics)
 
         init {
+            // Watch the car connection itself (v1.0.21): CarConnection
+            // reports the projection state whether or not a template
+            // session exists, which is exactly what the mirror gate
+            // and the launch memory need. Guarded: if the connection
+            // cannot be observed on this device, the gate simply stays
+            // false — the mirror never runs — rather than taking the
+            // whole app down in Application.onCreate.
+            runCatching {
+                val connection = CarConnection(appContext)
+                carConnection = connection
+                connection.type.observeForever(carConnectionObserver)
+            }.onFailure { Log.w(TAG, "could not observe the car connection", it) }
+
             // The file index is cached on disk, so a fresh process can serve
             // the first lookup from the cache at once — but the cache may be
             // stale, so rebuild it eagerly at startup too, keeping it fresh
@@ -178,17 +219,22 @@ class MyLrcAutoApp : Application() {
             // (v1.0.17: that suppression is how the card stayed gone
             // after a single failed start).
             //
-            // v1.0.18: gated on a live car session as well
-            // (carSessionLive). The hook used to start the service
-            // whenever a track was loaded, car or no car — and that
-            // active session, held by a foreground service with the
-            // phone nowhere near a car, blocked the wireless Android
-            // Auto connection. The combined flow fires on either input
-            // changing, so the car connecting starts the mirror (a
-            // track is already loaded) and the car disconnecting stops
-            // it at once, even if the snapshot does not change.
+            // v1.0.18: gated on a car being there as well. The hook
+            // used to start the service whenever a track was loaded,
+            // car or no car — and that active session, held by a
+            // foreground service with the phone nowhere near a car,
+            // blocked the wireless Android Auto connection. The
+            // combined flow fires on either input changing, so the
+            // car connecting starts the mirror (a track is already
+            // loaded) and the car disconnecting stops it at once,
+            // even if the snapshot does not change.
+            //
+            // v1.0.21: the car input is the projection connection,
+            // not a live template session — the two-tap flow
+            // finishes template sessions on icon taps, and the card
+            // (this mirror) must survive them for the whole drive.
             scope.launch {
-                combine(media.snapshot, carSessionLive) { snapshot, connected ->
+                combine(media.snapshot, carProjectionConnected) { snapshot, connected ->
                     snapshot to connected
                 }.collect { (snapshot, connected) ->
                     when (mirrorActivation.update(
@@ -202,6 +248,10 @@ class MyLrcAutoApp : Application() {
                     }
                 }
             }
+        }
+
+        private companion object {
+            const val TAG = "MyLrcAutoApp"
         }
     }
 }

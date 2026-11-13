@@ -129,6 +129,54 @@ class MirrorActivationTest {
     }
 
     @Test
+    fun projectionGate_playingTrackWithoutProjectionDoesNotWantTheMirror() {
+        // v1.0.21: the two-argument gate's boolean is the
+        // CarConnection projection state now, not a live template
+        // session. Before a projection exists the mirror must never
+        // run — that is still the v1.0.17/1.0.18 wireless-handshake
+        // protection, unchanged.
+        assertFalse(MirrorActivation.shouldBeActive(snapshot(isPlaying = true), false))
+        assertFalse(MirrorActivation.shouldBeActive(snapshot(isPlaying = false), false))
+    }
+
+    @Test
+    fun projectionGate_projectionConnectedWantsTheMirrorEvenWithNoSession() {
+        // The two-tap flow finishes template sessions on icon taps;
+        // the mirror is wanted for the whole projection connection
+        // regardless — session or no session.
+        assertTrue(MirrorActivation.shouldBeActive(snapshot(isPlaying = true), true))
+        assertTrue(MirrorActivation.shouldBeActive(snapshot(isPlaying = false), true))
+        assertFalse(
+            MirrorActivation.shouldBeActive(snapshot(isPlaying = true, track = null), true),
+        )
+    }
+
+    @Test
+    fun projectionGate_projectionDisconnectStopsTheMirror() {
+        // A projection disconnect flips the gate to false even
+        // though the track is still loaded, so the tracker issues
+        // STOP and the next connection starts clean.
+        val tracker = MirrorActivationTracker()
+        assertEquals(
+            MirrorAction.START,
+            tracker.update(
+                MirrorActivation.shouldBeActive(snapshot(isPlaying = true), true),
+                track.key,
+                nowMs = 0L,
+            ),
+        )
+        assertEquals(
+            MirrorAction.STOP,
+            tracker.update(
+                MirrorActivation.shouldBeActive(snapshot(isPlaying = true), false),
+                track.key,
+                nowMs = 1_000L,
+            ),
+        )
+        assertFalse(tracker.active)
+    }
+
+    @Test
     fun carDisconnectStopsTheMirror() {
         // The car going away must stop the service even though the
         // track is still loaded: the combined hook drives the tracker

@@ -45,6 +45,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Context
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
+import com.dannycom888.mylrcauto.car.LaunchDecision
+import com.dannycom888.mylrcauto.car.LaunchEntry
+import com.dannycom888.mylrcauto.car.LaunchRecord
+import com.dannycom888.mylrcauto.car.formatLaunchTimestamp
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.settings.AppLanguage
 import com.dannycom888.mylrcauto.settings.LyricsFontChoice
@@ -91,6 +95,105 @@ private fun appVersionName(context: Context): String = runCatching {
     info.versionName
 }.getOrNull() ?: ""
 
+/** One label/value row of the last-launch diagnostics block. */
+@Composable
+private fun DiagRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/**
+ * The last car launch, as the session recorded it: what the head
+ * unit sent (action / categories / extras / flags), the state the
+ * decision looked at, and what it decided. This is the evidence
+ * that settles whether a card tap and an icon tap arrive
+ * differently on the user's car — screenshot it after each tap.
+ */
+@Composable
+private fun LaunchDiagnosticsSection(record: LaunchRecord?) {
+    Text(
+        text = stringResource(R.string.settings_diag_title),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
+    if (record == null) {
+        Text(
+            text = stringResource(R.string.settings_diag_none),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        return
+    }
+    val none = stringResource(R.string.settings_diag_empty_value)
+    val yes = stringResource(R.string.settings_diag_yes)
+    val no = stringResource(R.string.settings_diag_no)
+    fun joined(values: Set<String>): String =
+        values.sorted().joinToString(", ").ifEmpty { none }
+    fun yesNo(value: Boolean): String = if (value) yes else no
+    Spacer(modifier = Modifier.height(4.dp))
+    DiagRow(
+        stringResource(R.string.settings_diag_time),
+        formatLaunchTimestamp(record.timestampMs),
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_entry),
+        stringResource(
+            when (record.entry) {
+                LaunchEntry.CREATE_SCREEN -> R.string.settings_diag_entry_create
+                LaunchEntry.NEW_INTENT -> R.string.settings_diag_entry_intent
+            },
+        ),
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_action),
+        record.intentAction ?: none,
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_categories),
+        joined(record.intentCategories),
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_extras),
+        joined(record.intentExtrasKeys),
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_flags),
+        record.intentFlags.toString(),
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_mirror),
+        yesNo(record.mirrorAlreadyActive),
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_shown),
+        yesNo(record.bigScreenShownThisConnection),
+    )
+    DiagRow(
+        stringResource(R.string.settings_diag_decision),
+        stringResource(
+            when (record.decision) {
+                LaunchDecision.SHOW_BIG_SCREEN -> R.string.settings_diag_decision_big
+                LaunchDecision.FINISH_TO_DASHBOARD -> R.string.settings_diag_decision_dash
+            },
+        ),
+    )
+}
+
 /**
  * Settings: language switch at the top, lyrics size slider, lyrics font
  * choice (original / Bauhaus), keep-screen-on switch, lyrics folder
@@ -105,6 +208,7 @@ private fun appVersionName(context: Context): String = runCatching {
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val context = LocalContext.current
     val settings by container.settings.settings.collectAsStateWithLifecycle()
+    val lastLaunch by container.launchDiagnostics.last.collectAsStateWithLifecycle()
 
     var rescanMessage by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
@@ -349,6 +453,14 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
+
+        // Last car launch (item-7 diagnostics): what the head unit
+        // sent for the most recent tap — icon or card — and what
+        // the launch decision did with it. Sits just above the
+        // version, at the bottom of the scrollable list.
+        Spacer(modifier = Modifier.height(24.dp))
+
+        LaunchDiagnosticsSection(lastLaunch)
 
         // Version, read from the package so it updates every release —
         // and the about line below it. Both sit at the bottom of a
