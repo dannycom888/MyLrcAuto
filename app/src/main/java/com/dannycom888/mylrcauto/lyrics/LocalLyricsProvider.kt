@@ -298,6 +298,12 @@ class LocalLyricsProvider(
                 matchStep = matchStep,
                 titleCodepoints = titleCodepointsHex(title),
                 closestNames = closest,
+                // v1.0.26: the first closest name's codepoints —
+                // beside its verbatim display above, this is what
+                // names a same-glyph codepoint difference (the
+                // 因为爱所以爱 trace's missing piece).
+                closestNameCodepoints = closest.firstOrNull()
+                    ?.let { titleCodepointsHex(it.fileName) } ?: "",
             )
         }
 

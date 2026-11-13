@@ -95,6 +95,8 @@ class LyricsDiagnosticsTest {
             ClosestStoredName("Beyond - 不再犹豫.lrc", StoredNameKind.LRC),
             ClosestStoredName("Beyond - 不再犹豫.mp3", StoredNameKind.AUDIO),
         ),
+        closestNameCodepoints: String =
+            "0042 0065 0079 006F 006E 0064 0020 002D 0020 4E0D 518D 72B9 8C6B 002E 006C 0072 0063",
     ) = LookupTrace(
         timestampMs = 1_763_000_000_000L,
         title = "不再犹豫",
@@ -116,6 +118,7 @@ class LyricsDiagnosticsTest {
         matchStep = matchStep,
         titleCodepoints = titleCodepoints,
         closestNames = closestNames,
+        closestNameCodepoints = closestNameCodepoints,
     )
 
     private fun rowsByLabel(
@@ -170,6 +173,7 @@ class LyricsDiagnosticsTest {
                 LyricsDiagLabel.RAW_PROBE,
                 LyricsDiagLabel.CLOSEST_NAMES,
                 LyricsDiagLabel.CLOSEST_NAMES,
+                LyricsDiagLabel.CLOSEST_NAME_CODEPOINTS,
                 LyricsDiagLabel.WINNER_FILE,
                 LyricsDiagLabel.MATCH_STEP,
                 LyricsDiagLabel.PARSED_LINES,
@@ -221,6 +225,16 @@ class LyricsDiagnosticsTest {
                 DiagValue.Text("Beyond - 不再犹豫.mp3（音频）"),
             ),
             closestRows.map { it.value },
+        )
+        // v1.0.26: one more row — the FIRST closest name's
+        // codepoints, so a same-glyph difference inside the stored
+        // name is readable position by position.
+        assertEquals(
+            DiagValue.Text(
+                "0042 0065 0079 006F 006E 0064 0020 002D 0020 " +
+                    "4E0D 518D 72B9 8C6B 002E 006C 0072 0063",
+            ),
+            byLabel[LyricsDiagLabel.CLOSEST_NAME_CODEPOINTS],
         )
         assertEquals(
             DiagValue.MatchStep(LookupMatchStep.AUDIO_WITH_ARTIST),
@@ -482,10 +496,48 @@ class LyricsDiagnosticsTest {
     fun rowsWithoutClosestNamesShowOneDashRow() {
         val rows = lyricsDiagRows(
             LyricsIndexDiag(LyricsIndexState.READY, 1092),
-            trace(LookupOutcome.NOT_FOUND, closestNames = emptyList()),
+            trace(
+                LookupOutcome.NOT_FOUND,
+                closestNames = emptyList(),
+                closestNameCodepoints = "",
+            ),
         )
         val closestRows = rows.filter { it.label == LyricsDiagLabel.CLOSEST_NAMES }
         assertEquals(1, closestRows.size)
         assertEquals(DiagValue.Text("—"), closestRows.single().value)
+        // v1.0.26: with no closest name there are no codepoints
+        // to show either — the row is present and reads "—".
+        val codepointRows =
+            rows.filter { it.label == LyricsDiagLabel.CLOSEST_NAME_CODEPOINTS }
+        assertEquals(1, codepointRows.size)
+        assertEquals(DiagValue.Text("—"), codepointRows.single().value)
+    }
+
+    @Test
+    fun rowsCarryFirstClosestNameCodepointsVerbatim() {
+        // v1.0.26: the 因为爱所以爱 shape — the closest name
+        // DISPLAYS identical to the title, so only its codepoints
+        // can show the difference. Here the first closest name
+        // carries the compatibility ideograph U+F967 where the
+        // title has 不 (U+4E0D): the row must carry the F967
+        // verbatim, not a folded or rendered form.
+        val compatName = "Beyond - \uF967再犹豫.lrc"
+        val byLabel = rowsByLabel(
+            LyricsIndexDiag(LyricsIndexState.READY, 1092),
+            trace(
+                LookupOutcome.NOT_FOUND,
+                closestNames = listOf(
+                    ClosestStoredName(compatName, StoredNameKind.LRC),
+                ),
+                closestNameCodepoints = titleCodepointsHex(compatName),
+            ),
+        )
+        assertEquals(
+            DiagValue.Text(
+                "0042 0065 0079 006F 006E 0064 0020 002D 0020 " +
+                    "F967 518D 72B9 8C6B 002E 006C 0072 0063",
+            ),
+            byLabel[LyricsDiagLabel.CLOSEST_NAME_CODEPOINTS],
+        )
     }
 }

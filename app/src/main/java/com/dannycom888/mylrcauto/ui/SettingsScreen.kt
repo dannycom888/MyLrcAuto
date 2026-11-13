@@ -218,6 +218,7 @@ private fun lyricsDiagLabelRes(label: LyricsDiagLabel): Int = when (label) {
     LyricsDiagLabel.FALLBACK_MATCHES -> R.string.settings_lrcdiag_fallback
     LyricsDiagLabel.RAW_PROBE -> R.string.settings_lrcdiag_probe
     LyricsDiagLabel.CLOSEST_NAMES -> R.string.settings_lrcdiag_closest
+    LyricsDiagLabel.CLOSEST_NAME_CODEPOINTS -> R.string.settings_lrcdiag_closest_codepoints
     LyricsDiagLabel.WINNER_FILE -> R.string.settings_lrcdiag_winner
     LyricsDiagLabel.MATCH_STEP -> R.string.settings_lrcdiag_match_step
     LyricsDiagLabel.PARSED_LINES -> R.string.settings_lrcdiag_parsed_lines

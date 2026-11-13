@@ -4,6 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.text.Normalizer
 
 /**
  * Pure filename matching for local `.lrc` files.
@@ -55,7 +56,8 @@ import java.nio.charset.CodingErrorAction
  * phase, reached only when every exact phase found nothing: a
  * candidate whose normalized title part has the SAME LENGTH as the
  * track's and sits within a small Levenshtein distance (1, or 2 for
- * titles longer than six characters) can still win — see
+ * titles of five characters or more — the bound was widened from
+ * "longer than six" in v1.0.26) can still win — see
  * [fuzzyWinner]. The v1.0.24 device trace proved the need: the
  * playing track's tag title itself carried a one-character
  * homophone typo （优 for 犹）, so the correctly named files could
@@ -63,6 +65,16 @@ import java.nio.charset.CodingErrorAction
  * is never accepted, which keeps the 爱/爱你 anti-substring
  * protection intact — an artist gate when both sides name an
  * artist, and only a unique minimum-distance winner is accepted.
+ *
+ * Since v1.0.26, [normalize] FIRST runs Unicode NFKC over its
+ * input: compatibility ideographs (the U+F900–U+FAFF block and
+ * friends) fold to their unified forms, which the curated T→S
+ * table cannot express (those codepoints are neither Traditional
+ * nor Simplified — they are duplicate encodings of the same
+ * glyph). The 2026-11-13 second trace proved the need: the tag
+ * title 因为爱所以爱 was codepoint-PERFECT, yet every phase
+ * missed files displayed as "谢霆锋 - 因为爱所以爱" — the
+ * divergence sat inside the stored file names themselves.
  */
 object LocalLyricsMatcher {
 
@@ -170,17 +182,24 @@ object LocalLyricsMatcher {
     }
 
     /**
-     * Normalizes one string for comparison: full-width characters are folded
-     * to half-width, Traditional Chinese characters are folded to Simplified
-     * ([foldTraditional]), zero-width characters are stripped, the text is
-     * lower-cased, and everything that is not a letter or digit is removed.
-     * All matching in this object compares normalized forms, so folding here
-     * — and only here — makes every comparison script-insensitive on both
-     * sides (index keys and query inputs alike).
+     * Normalizes one string for comparison. The input FIRST runs
+     * through Unicode compatibility decomposition (NFKC, v1.0.26):
+     * CJK compatibility ideographs (U+F900–U+FAFF) fold to their
+     * unified forms and full-width forms to half-width. Then
+     * full-width characters are folded to half-width (kept after
+     * NFKC as belt and braces), Traditional Chinese characters are
+     * folded to Simplified ([foldTraditional]), zero-width
+     * characters are stripped, the text is lower-cased, and
+     * everything that is not a letter or digit is removed.
+     * All matching in this object compares normalized forms, so
+     * folding here — and only here — makes every comparison
+     * script-insensitive on both sides (index keys and query
+     * inputs alike).
      */
     fun normalize(value: String): String {
-        val folded = StringBuilder(value.length)
-        for (rawChar in foldFullWidth(value)) {
+        val compatible = Normalizer.normalize(value, Normalizer.Form.NFKC)
+        val folded = StringBuilder(compatible.length)
+        for (rawChar in foldFullWidth(compatible)) {
             if (rawChar in ZERO_WIDTH_CHARS) continue
             val char = foldTraditional(rawChar)
             if (char.isLetterOrDigit()) {
@@ -473,13 +492,16 @@ object LocalLyricsMatcher {
 
     /**
      * How far apart two equal-length title parts may be and still
-     * count as the same song with a typo in it (v1.0.25): one
-     * wrong character for short titles, two for titles longer
-     * than six characters — a second typo in a short title is
+     * count as the same song with a typo in it: one wrong
+     * character for titles up to four characters, two for titles
+     * of five or more — a second typo in a very short title is
      * more likely a different song than a misspelling, and a
-     * longer title has room for two.
+     * longer title has room for two. (v1.0.25 set the two-typo
+     * bound at "longer than six"; v1.0.26 widened it to five or
+     * more after the 因为爱所以爱 device trace — a six-character
+     * title whose stored name differs in two positions.)
      */
-    fun fuzzyMaxDistance(titleLength: Int): Int = if (titleLength > 6) 2 else 1
+    fun fuzzyMaxDistance(titleLength: Int): Int = if (titleLength >= 5) 2 else 1
 
     /**
      * The artist and title parts of one indexed file name, in

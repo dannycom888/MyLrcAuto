@@ -95,6 +95,7 @@
     <string name="settings_lrcdiag_step_fuzzy">近似匹配</string>
     <string name="settings_lrcdiag_codepoints">歌名码点</string>
     <string name="settings_lrcdiag_closest">最接近的文件名</string>
+    <string name="settings_lrcdiag_closest_codepoints">最接近文件名码点</string>
 
     <string name="car_silent">没有在放歌</string>
     <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>

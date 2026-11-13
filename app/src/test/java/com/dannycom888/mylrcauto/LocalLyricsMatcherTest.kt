@@ -579,9 +579,14 @@ class LocalLyricsMatcherTest {
         assertEquals(1, LocalLyricsMatcher.levenshtein("abc", "ab"))
         assertEquals(2, LocalLyricsMatcher.levenshtein("", "ab"))
         assertEquals(3, LocalLyricsMatcher.levenshtein("kitten", "sitting"))
-        // The bound: one wrong character up to six, two beyond.
+        // The bound: one wrong character up to four characters,
+        // two from five on (v1.0.26 widened the two-typo tier
+        // from "longer than six" down to five-or-more — the pin
+        // for length 6 changed from 1 to 2 accordingly).
         assertEquals(1, LocalLyricsMatcher.fuzzyMaxDistance(1))
-        assertEquals(1, LocalLyricsMatcher.fuzzyMaxDistance(6))
+        assertEquals(1, LocalLyricsMatcher.fuzzyMaxDistance(4))
+        assertEquals(2, LocalLyricsMatcher.fuzzyMaxDistance(5))
+        assertEquals(2, LocalLyricsMatcher.fuzzyMaxDistance(6))
         assertEquals(2, LocalLyricsMatcher.fuzzyMaxDistance(7))
     }
 
@@ -783,6 +788,79 @@ class LocalLyricsMatcherTest {
             result.files.map { it.file.fileName },
         )
         assertTrue(result.fuzzyMatch)
+    }
+
+    @Test
+    fun fuzzyAcceptsTwoTyposInSixCharTitle() {
+        // v1.0.26, the 因为爱所以爱 shape: a SIX-character title
+        // two substitutions from the stored name's title part
+        // （爱→情 and the final 爱→受）. Under the v1.0.25 bound
+        // (1 at length 6) this missed; the widened bound (2 from
+        // length 5) accepts it — on the name side and the audio
+        // side alike.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "因为爱所以爱", listOf("谢霆锋"),
+            indexedLrc("谢霆锋 - 因为情所以受.lrc"),
+        )
+        assertEquals(
+            listOf("谢霆锋 - 因为情所以受.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.fuzzyMatch)
+        val audio = LocalLyricsMatcher.findAudioFileDetailed(
+            "因为爱所以爱", listOf("谢霆锋"),
+            indexedAudio("谢霆锋 - 因为情所以受.mp3"),
+        )
+        assertEquals("谢霆锋 - 因为情所以受.mp3", audio?.entry?.file?.fileName)
+        assertEquals(true, audio?.fuzzyMatch)
+    }
+
+    @Test
+    fun fuzzyRejectsTwoTyposInFourCharTitle() {
+        // The other half of the widened bound: a FOUR-character
+        // title still allows only ONE wrong character, so two
+        // substitutions （阔→润， 空→宫） stay a miss.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "海阔天空", listOf("Beyond"),
+            indexedLrc("Beyond - 海润天宫.lrc"),
+        )
+        assertTrue(result.files.isEmpty())
+        assertFalse(result.fuzzyMatch)
+        assertNull(
+            LocalLyricsMatcher.findAudioFileDetailed(
+                "海阔天空", listOf("Beyond"),
+                indexedAudio("Beyond - 海润天宫.mp3"),
+            ),
+        )
+    }
+
+    @Test
+    fun compatibilityIdeographFileNamesMatchPlainTag() {
+        // v1.0.26: the file names encode 不 as the CJK
+        // COMPATIBILITY IDEOGRAPH U+F967 — the same glyph as
+        // U+4E0D, twice-encoded. It is neither Traditional nor
+        // Simplified, so the 477-pair table folds it to itself
+        // and (pre-NFKC) normalize() keeps it as a different
+        // letter: the raw name does not even CONTAIN the plain
+        // title (the raw-probe 0/0 shape), and every exact phase
+        // missed. NFKC at the start of normalize() folds U+F967
+        // to U+4E0D, so the same lookups now hit exactly.
+        val lrcName = "Beyond - \uF967再犹豫.lrc"
+        val audioName = "Beyond - \uF967再犹豫.mp3"
+        assertFalse(lrcName.contains("不再犹豫"))
+        assertEquals("不再犹豫", LocalLyricsMatcher.normalize("\uF967再犹豫"))
+        val lrcIndex = indexedLrc(lrcName)
+        val audioIndex = indexedAudio(audioName)
+
+        val audioFile = LocalLyricsMatcher.findAudioFile(
+            "不再犹豫", listOf("Beyond"), audioIndex,
+        )
+        assertEquals(audioName, audioFile?.file?.fileName)
+        val sameStem = LocalLyricsMatcher.sameStemLrc(audioFile!!, lrcIndex)
+        assertEquals(lrcName, sameStem?.file?.fileName)
+        assertTrue(LocalLyricsMatcher.lrcTitleMatches(lrcName, "不再犹豫"))
+        val matched = LocalLyricsMatcher.match("不再犹豫", listOf("Beyond"), lrcIndex)
+        assertEquals(lrcName, matched.firstOrNull()?.file?.fileName)
     }
 
     @Test

@@ -314,6 +314,17 @@ data class LookupTrace(
      * the trace was built without them.
      */
     val closestNames: List<ClosestStoredName> = emptyList(),
+    /**
+     * The FIRST of [closestNames] as hex codepoints (v1.0.26, see
+     * [titleCodepointsHex]); "" when there are no closest names or
+     * the trace was built without one (the Settings row renders
+     * "—"). The v1.0.25 trace for 因为爱所以爱 showed why the
+     * names alone are not enough: the closest names DISPLAYED
+     * verbatim-perfect while still missing, so the difference has
+     * to be read off their codepoints — a compatibility ideograph
+     * renders as the very glyph it duplicates.
+     */
+    val closestNameCodepoints: String = "",
 )
 
 /** `yyyy-MM-dd HH:mm:ss` in the device's locale/timezone — what the user reads in a screenshot. */
@@ -342,6 +353,7 @@ enum class LyricsDiagLabel {
     FALLBACK_MATCHES,
     RAW_PROBE,
     CLOSEST_NAMES,
+    CLOSEST_NAME_CODEPOINTS,
     WINNER_FILE,
     MATCH_STEP,
     PARSED_LINES,
@@ -455,6 +467,15 @@ fun lyricsDiagRows(index: LyricsIndexDiag, lookup: LookupTrace?): List<LyricsDia
             )
         }
     }
+    // v1.0.26: the codepoints of the FIRST closest stored name —
+    // the names render identically to the title even when a
+    // stored codepoint differs (a compatibility ideograph is the
+    // same glyph twice-encoded), so the difference is only
+    // visible here, position by position against 歌名码点.
+    rows += LyricsDiagRow(
+        LyricsDiagLabel.CLOSEST_NAME_CODEPOINTS,
+        DiagValue.Text(lookup.closestNameCodepoints.ifEmpty { NO_VALUE }),
+    )
     rows += LyricsDiagRow(
         LyricsDiagLabel.WINNER_FILE,
         DiagValue.Text(lookup.winnerFile ?: NO_VALUE),

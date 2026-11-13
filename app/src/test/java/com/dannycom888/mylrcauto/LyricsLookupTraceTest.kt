@@ -499,6 +499,74 @@ class LyricsLookupTraceTest {
     }
 
     @Test
+    fun compatibilityIdeographNamedIndexHitsPlainTag() {
+        // v1.0.26: the index entries encode 不 as U+F967, the
+        // CJK compatibility ideograph for U+4E0D — the names
+        // render exactly like "Beyond - 不再犹豫", the raw probe
+        // reads 0/0, and the 477-pair table cannot fold a
+        // codepoint that is neither Traditional nor Simplified
+        // (pre-NFKC it survives normalize() as a different
+        // letter, so the exact phases all miss it). With NFKC
+        // inside normalize() the same-stem step hits EXACTLY,
+        // and the trace's new row shows the stored name's
+        // codepoints — F967 in the slot where the title has
+        // 4E0D.
+        val lrcName = "Beyond - \uF967再犹豫.lrc"
+        val audioName = "Beyond - \uF967再犹豫.mp3"
+        val source = FakeSource(
+            lrcFiles = listOf(
+                LocalLrcFile("content://test/boy/$lrcName", lrcName),
+                LocalLrcFile(
+                    "content://test/boy/Beyond - 光辉岁月.lrc",
+                    "Beyond - 光辉岁月.lrc",
+                ),
+            ),
+            audioFiles = listOf(
+                LocalAudioFile("content://test/boy/$audioName", audioName),
+            ),
+            bytesByName = mapOf(lrcName to fixtureBytes()),
+        )
+        val provider = providerFor(source)
+
+        val document = runBlocking {
+            provider.fetch(
+                TrackInfo(
+                    title = "不再犹豫",
+                    artist = "Beyond",
+                    album = "",
+                    durationMs = 231_000L,
+                    packageName = "com.maxmpz.audioplayer",
+                ),
+            )
+        }
+        assertNotNull(document)
+
+        val trace = provider.lastLookup.value!!
+        assertEquals(true, trace.audioFileFound)
+        assertEquals(lrcName, trace.sameStemCandidate)
+        assertEquals(true, trace.titleCheckPassed)
+        assertEquals(lrcName, trace.winnerFile)
+        assertEquals(LookupOutcome.FOUND_SAME_STEM, trace.outcome)
+        // An EXACT step, not the fuzzy one: NFKC made the names
+        // compare equal, so the audio-anchored phase produced it.
+        assertEquals(LookupMatchStep.AUDIO_WITH_ARTIST, trace.matchStep)
+        // The raw probe stays raw: the stored names do not
+        // contain the plain title verbatim — 0/0 with a hit.
+        assertEquals(0, trace.rawProbeLrcCount)
+        assertEquals(0, trace.rawProbeAudioCount)
+        assertEquals("4E0D 518D 72B9 8C6B", trace.titleCodepoints)
+        assertEquals(lrcName, trace.closestNames.firstOrNull()?.fileName)
+        assertEquals(StoredNameKind.LRC, trace.closestNames.firstOrNull()?.kind)
+        // The v1.0.26 row: the first closest name's codepoints,
+        // F967 sitting exactly where the title has 4E0D.
+        assertEquals(
+            "0042 0065 0079 006F 006E 0064 0020 002D 0020 " +
+                "F967 518D 72B9 8C6B 002E 006C 0072 0063",
+            trace.closestNameCodepoints,
+        )
+    }
+
+    @Test
     fun indexDiagReportsTheWalksDroppedCount() {        // The dropped-row count from the walk that built the served
         // index lands in the diagnostics block — on the device this
         // is the number that proves (or clears) the silent-drop
