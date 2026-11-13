@@ -399,22 +399,23 @@ class CarLyricsScreen(
                     .apply { if (artist.isNotEmpty()) addText(artist) }
                     .build(),
             )
-            .build()
-        val template = PaneTemplate.Builder(pane)
+        val strip = paneTransport(pane)
+        val template = PaneTemplate.Builder(pane.build())
             .setTitle(carContext.getString(R.string.app_name))
             .setHeaderAction(carPaneHeaderAction())
-        guardedTransportStrip()?.let { template.setActionStrip(it) }
+        strip?.let { template.setActionStrip(it) }
         return template.build()
     }
 
     private fun Content.lyrics(glance: CarGlance.Now): Template {
         val pane = Pane.Builder().addLyricRows(glance)
+        val strip = paneTransport(pane)
 
         val template = PaneTemplate.Builder(pane.build())
             .setTitle(title)
             .setHeaderAction(carPaneHeaderAction())
 
-        guardedTransportStrip()?.let { template.setActionStrip(it) }
+        strip?.let { template.setActionStrip(it) }
         return template.build()
     }
 
@@ -444,21 +445,67 @@ class CarLyricsScreen(
     }
 
     /**
-     * [transportStrip] behind a guard (v1.0.27): the strip is chrome,
-     * and building it touches the library's action constraints — the
-     * one part of a pane build with a known throw history (see
-     * [action]). A strip that fails now costs the buttons, not the
-     * whole pane: before, the throw escaped to onGetTemplate's catch
-     * and the driver got the title-only emergency pane instead of
-     * the lyrics the screen already had.
+     * [stripOf] behind a guard (v1.0.27): the strip is chrome, and
+     * building it touches the library's action constraints — a strip
+     * that fails costs the buttons, not the whole pane. This is the
+     * assembly for the surface template (MapWithContentTemplate),
+     * whose strip may hold up to
+     * [MAP_TEMPLATE_MAX_STRIP_ACTIONS] actions, so the full transport
+     * fits there unchanged. PaneTemplates assemble their transport
+     * through [paneTransport] instead — their strip cap is lower
+     * (v1.0.28, see there).
      */
     private fun Content.guardedTransportStrip(): ActionStrip? =
-        runCatching { transportStrip() }
+        runCatching { stripOf(carTransportFor(transport)) }
             .onFailure { Log.w(TAG, "transport strip failed, showing the pane without it", it) }
             .getOrNull()
 
     /**
-     * The transport row, or nothing at all.
+     * The transport controls for a PaneTemplate (v1.0.28), split by
+     * [paneTransportFor] across the two action containers the
+     * template has: the skips in the action strip, play/pause as the
+     * pane's own action.
+     *
+     * The split exists because the containers' caps differ and the
+     * strip's is the smaller one: `PaneTemplate.setActionStrip`
+     * validates the strip against the library's
+     * ACTIONS_CONSTRAINTS_SIMPLE — at most
+     * [PANE_TEMPLATE_MAX_STRIP_ACTIONS] actions — while a full
+     * transport is three. Up to v1.0.27 the whole strip went to
+     * `setActionStrip`, which threw "Action list exceeded max
+     * number of 2 actions" for every full-transport pane; the call
+     * sat outside the strip's own guard (the guard covered building
+     * the strip, which validates nothing about counts), so the throw
+     * escaped to onGetTemplate's catch and the driver got the
+     * title-only emergency pane — the 2026-11-13 07:39 render record
+     * names exactly that exception. The pane itself may carry up to
+     * [PANE_MAX_ACTIONS] actions (validated at build against
+     * ACTIONS_CONSTRAINTS_BODY_WITH_PRIMARY_ACTION), and play/pause
+     * — the one titled, state-changing button — is the natural pane
+     * action.
+     *
+     * Adds the pane actions to [pane] and returns the strip, or null
+     * when the session earned no skips. Everything is built behind
+     * one guard, and the actions are all built BEFORE any is added:
+     * a failure (an icon the library rejects) costs the controls,
+     * never leaves the pane half-wired, and never costs the rows.
+     */
+    private fun Content.paneTransport(pane: Pane.Builder): ActionStrip? {
+        val split = paneTransportFor(carTransportFor(transport))
+        if (split.strip.isEmpty() && split.paneActions.isEmpty()) return null
+        val built = runCatching {
+            val paneActions = split.paneActions.map { transportAction(it) }
+            val strip = stripOf(split.strip)
+            paneActions to strip
+        }.onFailure {
+            Log.w(TAG, "transport controls failed, showing the pane without them", it)
+        }.getOrNull() ?: return null
+        built.first.forEach { pane.addAction(it) }
+        return built.second
+    }
+
+    /**
+     * An action strip holding [buttons], or nothing at all.
      *
      * Null rather than an empty strip, and that is not tidiness:
      * `ActionStrip.Builder.build()` throws "Action strip must contain at
@@ -466,30 +513,30 @@ class CarLyricsScreen(
      * has `transport.any` true while earning no buttons at all — which would
      * have taken down both car templates for that one player.
      */
-    private fun Content.transportStrip(): ActionStrip? {
-        val wanted = carTransportFor(transport)
-        if (wanted.isEmpty()) return null
+    private fun Content.stripOf(buttons: List<CarTransport>): ActionStrip? {
+        if (buttons.isEmpty()) return null
 
         val strip = ActionStrip.Builder()
-        for (button in wanted) {
-            strip.addAction(
-                when (button) {
-                    CarTransport.PREVIOUS -> action(R.drawable.ic_car_previous, null) {
-                        container.media.skipPrevious()
-                    }
-
-                    CarTransport.PLAY_PAUSE -> action(
-                        if (playing) R.drawable.ic_car_pause else R.drawable.ic_car_play,
-                        if (playing) R.string.car_pause else R.string.car_play,
-                    ) { container.media.togglePlayPause() }
-
-                    CarTransport.NEXT -> action(R.drawable.ic_car_next, null) {
-                        container.media.skipNext()
-                    }
-                },
-            )
+        for (button in buttons) {
+            strip.addAction(transportAction(button))
         }
         return strip.build()
+    }
+
+    /** One transport button as an [Action] — the same button whichever container it lands in. */
+    private fun Content.transportAction(button: CarTransport): Action = when (button) {
+        CarTransport.PREVIOUS -> action(R.drawable.ic_car_previous, null) {
+            container.media.skipPrevious()
+        }
+
+        CarTransport.PLAY_PAUSE -> action(
+            if (playing) R.drawable.ic_car_pause else R.drawable.ic_car_play,
+            if (playing) R.string.car_pause else R.string.car_play,
+        ) { container.media.togglePlayPause() }
+
+        CarTransport.NEXT -> action(R.drawable.ic_car_next, null) {
+            container.media.skipNext()
+        }
     }
 
     /**
@@ -497,13 +544,14 @@ class CarLyricsScreen(
      *
      * This started out as icon *and* title on all three, for the screen
      * reader — `Action` has no content description of its own, so a title is
-     * the only label there is. The library says no:
-     * `PaneTemplate.setActionStrip` validates against
-     * `ACTIONS_CONSTRAINTS_SIMPLE`, which permits exactly **one** action
-     * with a custom title and throws on the second. So the one title goes to
-     * play/pause, the button whose meaning changes and the one most worth
-     * announcing, and the skips are icon-only. Both templates in use here
-     * allow at least one, so the same row works in each.
+     * the only label there is. The library says no: a PaneTemplate's
+     * action strip (ACTIONS_CONSTRAINTS_SIMPLE) permits exactly **one**
+     * action with a custom title and throws on the second — and since
+     * v1.0.28 the strip holds only the icon-only skips anyway, while
+     * play/pause's title rides on its pane action, whose constraints
+     * (ACTIONS_CONSTRAINTS_BODY_WITH_PRIMARY_ACTION) allow up to two.
+     * The surface template's strip (ACTIONS_CONSTRAINTS_NAVIGATION)
+     * allows four titles, so the same single title works there too.
      */
     private fun action(icon: Int, label: Int?, onClick: () -> Unit): Action =
         Action.Builder()
@@ -563,6 +611,62 @@ internal fun carTransportFor(transport: Transport): List<CarTransport> = buildLi
     if (transport.playPause) add(CarTransport.PLAY_PAUSE)
     if (transport.skipNext) add(CarTransport.NEXT)
 }
+
+/**
+ * Max actions in a `PaneTemplate`'s action strip: the Car App Library
+ * 1.7.0's ACTIONS_CONSTRAINTS_SIMPLE (maxActions 2, maxCustomTitles 1),
+ * enforced by `PaneTemplate.Builder.setActionStrip`. Read from the
+ * library's own bytecode, not the docs — the docs do not print the
+ * number, and v1.0.27 shipped three actions against it.
+ */
+internal const val PANE_TEMPLATE_MAX_STRIP_ACTIONS = 2
+
+/**
+ * Max actions a `Pane` itself may carry inside a `PaneTemplate`: the
+ * library's ACTIONS_CONSTRAINTS_BODY_WITH_PRIMARY_ACTION (maxActions
+ * 2, maxCustomTitles 2, maxPrimaryActions 1), enforced by
+ * `PaneTemplate.Builder.build` against `Pane.getActions()`.
+ */
+internal const val PANE_MAX_ACTIONS = 2
+
+/**
+ * Max actions in a `MapWithContentTemplate`'s action strip: the
+ * library's ACTIONS_CONSTRAINTS_NAVIGATION (maxActions 4), enforced
+ * by its `setActionStrip`. A full three-button transport fits, which
+ * is why the surface template never hit the pane template's cap.
+ */
+internal const val MAP_TEMPLATE_MAX_STRIP_ACTIONS = 4
+
+/** Where a pane template's transport buttons live, split by container. */
+internal data class PaneTransport(
+    /** Buttons for the template's action strip, in display order. */
+    val strip: List<CarTransport>,
+    /** Buttons carried by the pane itself, in display order. */
+    val paneActions: List<CarTransport>,
+)
+
+/**
+ * Splits a transport for a `PaneTemplate` across its two action
+ * containers, so the pane builds at all (v1.0.28).
+ *
+ * A full transport is three buttons and the template's strip holds
+ * at most [PANE_TEMPLATE_MAX_STRIP_ACTIONS] — the assembly that put
+ * all three in the strip threw at `setActionStrip` every time (see
+ * CarLyricsScreen.paneTransport for the device evidence). The skips
+ * stay together in the strip, in order — the strip is where this
+ * app's transport lives on every other template, and the pair reads
+ * as one control — and play/pause, the one titled and
+ * state-changing button, becomes the pane's own action, whose
+ * container allows [PANE_MAX_ACTIONS]. Every earned button survives
+ * exactly once; nothing scales with the song's line count, which is
+ * the point — the pane's rows are previous/current/next however
+ * long the song is.
+ */
+internal fun paneTransportFor(buttons: List<CarTransport>): PaneTransport =
+    PaneTransport(
+        strip = buttons.filter { it != CarTransport.PLAY_PAUSE },
+        paneActions = buttons.filter { it == CarTransport.PLAY_PAUSE },
+    )
 
 /**
  * The state-driven collector's rule, extracted so it is unit-testable:
