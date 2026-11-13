@@ -106,6 +106,15 @@ enum class LookupMatchStep {
 
     /** Step 2: the key ranking matched nothing; the title-only phase matched. */
     NAME_TITLE_ONLY,
+
+    /**
+     * The v1.0.25 fuzzy last resort matched: every exact phase on
+     * the producing step's side missed, and a same-length title
+     * part within the Levenshtein bound won. Which side produced
+     * it stays readable from the outcome (FOUND_SAME_STEM vs
+     * FOUND_METADATA).
+     */
+    FUZZY,
 }
 
 /**

@@ -254,6 +254,8 @@ private fun lookupMatchStepRes(step: LookupMatchStep): Int =
             R.string.settings_lrcdiag_step_name_artist
         LookupMatchStep.NAME_TITLE_ONLY ->
             R.string.settings_lrcdiag_step_name_title
+        LookupMatchStep.FUZZY ->
+            R.string.settings_lrcdiag_step_fuzzy
     }
 
 /**

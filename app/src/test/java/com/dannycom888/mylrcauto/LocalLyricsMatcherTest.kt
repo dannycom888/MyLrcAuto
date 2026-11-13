@@ -571,4 +571,229 @@ class LocalLyricsMatcherTest {
         )
         assertEquals("王心凌 - 爱你.lrc", matched.firstOrNull()?.file?.fileName)
     }
+
+    @Test
+    fun levenshteinAndFuzzyBoundUnits() {
+        assertEquals(0, LocalLyricsMatcher.levenshtein("不再犹豫", "不再犹豫"))
+        assertEquals(1, LocalLyricsMatcher.levenshtein("不再优豫", "不再犹豫"))
+        assertEquals(1, LocalLyricsMatcher.levenshtein("abc", "ab"))
+        assertEquals(2, LocalLyricsMatcher.levenshtein("", "ab"))
+        assertEquals(3, LocalLyricsMatcher.levenshtein("kitten", "sitting"))
+        // The bound: one wrong character up to six, two beyond.
+        assertEquals(1, LocalLyricsMatcher.fuzzyMaxDistance(1))
+        assertEquals(1, LocalLyricsMatcher.fuzzyMaxDistance(6))
+        assertEquals(2, LocalLyricsMatcher.fuzzyMaxDistance(7))
+    }
+
+    @Test
+    fun findAudioFileFuzzyFindsCorrectlyNamedFileForTypoTag() {
+        // The v1.0.24 device trace, verbatim (2026-11-13 00:18:34):
+        // Poweramp reports the title as 不再优豫 — codepoints
+        // 4E0D 518D 4F18 8C6B, 优 for 犹, a homophone TYPO in the
+        // MP3's tag — while the files are named correctly. Every
+        // containment pass misses (the stem cannot contain a title
+        // that is one character off); only the fuzzy phase can
+        // pick the file, and it records itself as fuzzy.
+        val files = indexedAudio(
+            "Beyond - 不再犹豫.mp3",
+            "Beyond - 喜欢你.mp3",
+        )
+        val detailed = LocalLyricsMatcher.findAudioFileDetailed(
+            "不再优豫", listOf("Beyond"), files,
+        )
+        assertEquals("Beyond - 不再犹豫.mp3", detailed?.entry?.file?.fileName)
+        assertEquals(true, detailed?.fuzzyMatch)
+        assertEquals(false, detailed?.titleOnlyRetry)
+        assertEquals(
+            "Beyond - 不再犹豫.mp3",
+            LocalLyricsMatcher.findAudioFile("不再优豫", listOf("Beyond"), files)
+                ?.file?.fileName,
+        )
+    }
+
+    @Test
+    fun matchFuzzyFindsCorrectlyNamedLrcForTypoTag() {
+        // The same device case through the name fallback: the key
+        // ranking and the exact title-only phase are both RIGHT to
+        // miss a mistyped title; the fuzzy phase returns the one
+        // file a single substitution away.
+        val index = indexedLrc(
+            "Beyond - 不再犹豫.lrc",
+            "Beyond - 喜欢你.lrc",
+        )
+        val result = LocalLyricsMatcher.matchDetailed("不再优豫", listOf("Beyond"), index)
+        assertEquals(
+            listOf("Beyond - 不再犹豫.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.fuzzyMatch)
+        assertFalse(result.titleOnlyFallback)
+        assertEquals(
+            "Beyond - 不再犹豫.lrc",
+            LocalLyricsMatcher.match("不再优豫", listOf("Beyond"), index)
+                .firstOrNull()?.file?.fileName,
+        )
+    }
+
+    @Test
+    fun fuzzyNeverMatchesDifferentLengthTitles() {
+        // The 爱/爱你 protection, pinned for the fuzzy phase in
+        // both directions: a length difference is an insertion or
+        // deletion and is NEVER accepted — so a one-character
+        // title cannot fuzzy into a two-character one, nor back.
+        val shortTag = LocalLyricsMatcher.matchDetailed(
+            "爱", listOf("王心凌"),
+            indexedLrc("王心凌 - 爱你.lrc"),
+        )
+        assertTrue(shortTag.files.isEmpty())
+        assertFalse(shortTag.fuzzyMatch)
+        val longTag = LocalLyricsMatcher.matchDetailed(
+            "爱你", listOf("王心凌"),
+            indexedLrc("王心凌 - 爱.lrc"),
+        )
+        assertTrue(longTag.files.isEmpty())
+        assertFalse(longTag.fuzzyMatch)
+        // The audio side, both directions: containment cannot
+        // rescue these shapes either (the shorter stem does not
+        // contain the longer title, and the artist-carrying file
+        // for the shorter title is only reachable through fuzzy).
+        assertNull(
+            LocalLyricsMatcher.findAudioFileDetailed(
+                "爱你", listOf("王心凌"),
+                indexedAudio("王心凌 - 爱.mp3"),
+            ),
+        )
+        assertNull(
+            LocalLyricsMatcher.findAudioFileDetailed(
+                "爱你", listOf("王心凌"),
+                indexedAudio("爱.mp3"),
+            ),
+        )
+    }
+
+    @Test
+    fun fuzzyTieAtMinimumDistanceMatchesNothing() {
+        // Two files exactly one substitution from the mistyped
+        // tag, both naming the artist: guessing between two
+        // near-miss songs is worse than showing none.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "不再优豫", listOf("Beyond"),
+            indexedLrc("Beyond - 不再犹豫.lrc", "Beyond - 不再优虑.lrc"),
+        )
+        assertTrue(result.files.isEmpty())
+        assertFalse(result.fuzzyMatch)
+        assertNull(
+            LocalLyricsMatcher.findAudioFileDetailed(
+                "不再优豫", listOf("Beyond"),
+                indexedAudio("Beyond - 不再犹豫.mp3", "Beyond - 不再优虑.mp3"),
+            ),
+        )
+    }
+
+    @Test
+    fun fuzzyAcceptsTwoTyposOnlyInLongTitles() {
+        // Eight characters, two of them wrong in the tag
+        // (梅 for 玫, 归 for 瑰): inside the >6 bound of 2.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "九百九十九朵梅归", listOf("邰正宵"),
+            indexedLrc("邰正宵 - 九百九十九朵玫瑰.lrc"),
+        )
+        assertEquals(
+            listOf("邰正宵 - 九百九十九朵玫瑰.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.fuzzyMatch)
+        // The same two-substitution distance in a FOUR-character
+        // title is over the bound of 1 — a different song, not a
+        // typo: 不再忧虑 is two substitutions from 不再优豫.
+        assertTrue(
+            LocalLyricsMatcher.match(
+                "不再优豫", listOf("Beyond"),
+                indexedLrc("Beyond - 不再忧虑.lrc"),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun fuzzyRejectsWrongArtistNearTitle() {
+        // The title is one substitution away but the file names a
+        // DIFFERENT artist: the gate rejects it outright. (The
+        // exact title-only phase cannot rescue it either — the
+        // tag's typo makes the title parts unequal.)
+        val result = LocalLyricsMatcher.matchDetailed(
+            "不再优豫", listOf("Beyond"),
+            indexedLrc("周杰伦 - 不再犹豫.lrc"),
+        )
+        assertTrue(result.files.isEmpty())
+        assertFalse(result.fuzzyMatch)
+        assertNull(
+            LocalLyricsMatcher.findAudioFileDetailed(
+                "不再优豫", listOf("Beyond"),
+                indexedAudio("周杰伦 - 不再犹豫.mp3"),
+            ),
+        )
+    }
+
+    @Test
+    fun fuzzyArtistTierOutranksCloserBareTitleFile() {
+        // Tier before distance: the artist-matching file is TWO
+        // substitutions away, the bare title-only file only ONE —
+        // the artist file still wins, because a file that names
+        // the track's artist is the stronger claim.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "九百九十九朵梅归", listOf("邰正宵"),
+            indexedLrc(
+                "九百九十九朵梅瑰.lrc",
+                "邰正宵 - 九百九十九朵玫瑰.lrc",
+            ),
+        )
+        assertEquals(
+            listOf("邰正宵 - 九百九十九朵玫瑰.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.fuzzyMatch)
+    }
+
+    @Test
+    fun fuzzyWorksWithoutReportedArtist() {
+        // No artist from the player: no gate, one tier — the
+        // near-title file still wins on its own.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "不再优豫", emptyList(),
+            indexedLrc("Beyond - 不再犹豫.lrc"),
+        )
+        assertEquals(
+            listOf("Beyond - 不再犹豫.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.fuzzyMatch)
+    }
+
+    @Test
+    fun fuzzyMatchesBracketedTitleVariant() {
+        // The file's title part carries a "(Live)" suffix: its
+        // bracket-stripped variant is the one a substitution from
+        // the tag, and that is enough.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "不再优豫", listOf("Beyond"),
+            indexedLrc("Beyond - 不再犹豫 (Live).lrc"),
+        )
+        assertEquals(
+            listOf("Beyond - 不再犹豫 (Live).lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.fuzzyMatch)
+    }
+
+    @Test
+    fun exactPhasesDoNotReportFuzzy() {
+        // An ordinary exact title-only fallback (v1.0.23 shape)
+        // keeps its own flag and does not claim the fuzzy step.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "晴天", listOf("周杰伦"),
+            indexedLrc("林俊杰 - 晴天.lrc"),
+        )
+        assertTrue(result.titleOnlyFallback)
+        assertFalse(result.fuzzyMatch)
+    }
 }

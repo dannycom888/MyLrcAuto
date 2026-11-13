@@ -50,6 +50,19 @@ import java.nio.charset.CodingErrorAction
  * itself, so every existing call site (index keys, track keys, file
  * stems, the title guard) inherits it without changing any other
  * matching semantics.
+ *
+ * Since v1.0.25 both detailed lookups end in a conservative FUZZY
+ * phase, reached only when every exact phase found nothing: a
+ * candidate whose normalized title part has the SAME LENGTH as the
+ * track's and sits within a small Levenshtein distance (1, or 2 for
+ * titles longer than six characters) can still win — see
+ * [fuzzyWinner]. The v1.0.24 device trace proved the need: the
+ * playing track's tag title itself carried a one-character
+ * homophone typo （优 for 犹）, so the correctly named files could
+ * never compare equal. Same-length only — an insertion or deletion
+ * is never accepted, which keeps the 爱/爱你 anti-substring
+ * protection intact — an artist gate when both sides name an
+ * artist, and only a unique minimum-distance winner is accepted.
  */
 object LocalLyricsMatcher {
 
@@ -313,12 +326,14 @@ object LocalLyricsMatcher {
 
     /**
      * A [findAudioFileDetailed] result: the file that was picked and
-     * whether it came from the title-only retry (see there).
+     * which relaxation produced it, when one did.
      */
     data class AudioFileMatch(
         val entry: IndexedAudioFile,
         /** True when the title+artist pass found nothing and the title-only retry picked this file. */
         val titleOnlyRetry: Boolean,
+        /** True when every exact pass found nothing and the v1.0.25 fuzzy phase picked this file. */
+        val fuzzyMatch: Boolean = false,
     )
 
     /**
@@ -351,6 +366,16 @@ object LocalLyricsMatcher {
      * The pick stays safe for the step that consumes it: the same-stem
      * `.lrc` still has to pass the exact title check
      * ([lrcTitleMatches]) before anything is shown.
+     *
+     * v1.0.25: when the retry also finds nothing, the fuzzy last
+     * resort runs ([fuzzyWinner] over the audio entries' title
+     * parts): a same-length title part within the distance bound
+     * can still pick the file — the tag-typo shape, where the
+     * playing file is correctly named but the player's title is
+     * one character off, so no containment check can ever see it.
+     * A fuzzy winner is a normal audio hit from here on: the
+     * same-stem `.lrc` proceeds through the same exact title check
+     * as any other hit.
      */
     fun findAudioFileDetailed(
         title: String,
@@ -371,14 +396,23 @@ object LocalLyricsMatcher {
             requireArtist = artistSegments.isNotEmpty(),
         )
         if (primary != null) return AudioFileMatch(primary, titleOnlyRetry = false)
-        if (artistSegments.isEmpty()) return null
-        val retry = bestAudioMatch(
-            normalizedTitle = normalizedTitle,
-            artistSegments = artistSegments,
-            audioFiles = audioFiles,
-            requireArtist = false,
-        )
-        return retry?.let { AudioFileMatch(it, titleOnlyRetry = true) }
+        if (artistSegments.isNotEmpty()) {
+            val retry = bestAudioMatch(
+                normalizedTitle = normalizedTitle,
+                artistSegments = artistSegments,
+                audioFiles = audioFiles,
+                requireArtist = false,
+            )
+            if (retry != null) return AudioFileMatch(retry, titleOnlyRetry = true)
+        }
+        val fuzzy = fuzzyWinner(
+            queryTitle = title,
+            queryArtistSegments = artistSegments,
+            entries = audioFiles,
+        ) { entry -> fileNameParts(entry.file.fileName, lrc = false) }
+        return fuzzy?.let {
+            AudioFileMatch(it, titleOnlyRetry = false, fuzzyMatch = true)
+        }
     }
 
     /**
@@ -404,6 +438,173 @@ object LocalLyricsMatcher {
             }
             .minByOrNull { it.first }
             ?.second
+    }
+
+    /**
+     * Plain Levenshtein edit distance over UTF-16 characters
+     * (substitution/insertion/deletion each cost 1). The inputs
+     * here are already normalized and short (a title part), so a
+     * plain dynamic program is fast enough — the fuzzy phase only
+     * runs when every exact phase has already failed, and the
+     * caller only calls it on equal-length pairs (see
+     * [fuzzyWinner]), where insertions and deletions can never
+     * contribute anyway.
+     */
+    fun levenshtein(a: String, b: String): Int {
+        if (a == b) return 0
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        var previous = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            val current = IntArray(b.length + 1)
+            current[0] = i
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                current[j] = minOf(
+                    current[j - 1] + 1,
+                    previous[j] + 1,
+                    previous[j - 1] + cost,
+                )
+            }
+            previous = current
+        }
+        return previous[b.length]
+    }
+
+    /**
+     * How far apart two equal-length title parts may be and still
+     * count as the same song with a typo in it (v1.0.25): one
+     * wrong character for short titles, two for titles longer
+     * than six characters — a second typo in a short title is
+     * more likely a different song than a misspelling, and a
+     * longer title has room for two.
+     */
+    fun fuzzyMaxDistance(titleLength: Int): Int = if (titleLength > 6) 2 else 1
+
+    /**
+     * The artist and title parts of one indexed file name, in
+     * normalized form. The title part keeps both the raw and the
+     * bracket-stripped variants (a `(Live)` suffix still belongs
+     * to the same title), and the artist part is the individual
+     * segments of its credit.
+     */
+    private data class FileNameParts(
+        /** Individual normalized artists of the name's artist part; empty when there is none. */
+        val artistSegments: Set<String>,
+        /** The name's normalized title part, plus the bracket-stripped form when it differs. */
+        val titleVariants: Set<String>,
+    )
+
+    /** Splits one file name into its artist and title parts (see [FileNameParts]). */
+    private fun fileNameParts(fileName: String, lrc: Boolean): FileNameParts {
+        val stem = if (lrc) {
+            fileName.removeSuffix(".lrc").removeSuffix(".LRC")
+        } else {
+            fileName.substringBeforeLast('.', fileName)
+        }
+        val split = splitArtistTitle(stem)
+        val artistPart = split?.first
+        val titlePart = split?.second ?: stem
+        val titleVariants = linkedSetOf<String>()
+        for (variant in listOf(titlePart, stripBracketed(titlePart))) {
+            val normalized = normalize(variant)
+            if (normalized.isNotEmpty()) titleVariants += normalized
+        }
+        val segments = artistPart?.let {
+            splitArtists(it).map { segment -> normalize(segment) }
+                .filter { segment -> segment.isNotEmpty() }.toSet()
+        } ?: emptySet()
+        return FileNameParts(artistSegments = segments, titleVariants = titleVariants)
+    }
+
+    /**
+     * The conservative fuzzy last resort (v1.0.25), shared by the
+     * audio search ([findAudioFileDetailed]) and the name match
+     * ([matchDetailed]) — it only ever runs after every exact phase
+     * of its caller has come back empty.
+     *
+     * A candidate qualifies only when one of its normalized title
+     * variants has the SAME LENGTH as the query title and sits
+     * within [fuzzyMaxDistance] of it (distance 0 is excluded —
+     * an exact title was the earlier phases' job, and letting an
+     * exact pair through would mislabel an exact hit as fuzzy).
+     * Same length is the hard line: a length difference is an
+     * insertion or deletion, so a shorter title can never fuzzy
+     * into a longer one — the 爱/爱你 protection holds here by
+     * construction, and is pinned by tests in both directions.
+     *
+     * The artist gate: when the query names artists, a candidate
+     * whose name carries an artist part must share at least one
+     * normalized artist segment with the query — otherwise it is
+     * rejected outright (a wrong-artist near-title is a different
+     * song). A candidate with no artist part is allowed but ranks
+     * below artist-matching ones: artist-matching candidates are
+     * considered first, and the winner is chosen inside that
+     * tier. When the query names no artist at all, every
+     * candidate is in the same (only) tier.
+     *
+     * Only a UNIQUE minimum-distance winner is accepted: when two
+     * or more candidates in the deciding tier tie at the minimum
+     * distance, the lookup matches nothing — guessing between two
+     * near-miss songs is worse than showing none.
+     *
+     * @param entries the candidates to consider, in index order.
+     * @param partsOf how to get one candidate's [FileNameParts].
+     * @return the winning entry, or null when nothing qualifies.
+     */
+    private fun <T> fuzzyWinner(
+        queryTitle: String,
+        queryArtistSegments: Set<String>,
+        entries: List<T>,
+        partsOf: (T) -> FileNameParts,
+    ): T? {
+        val queryVariants = linkedSetOf(
+            normalize(queryTitle),
+            normalize(stripBracketed(queryTitle)),
+        ).filter { it.isNotEmpty() }
+        if (queryVariants.isEmpty()) return null
+        // (entry, distance, artistMatched)
+        val scored = entries.mapNotNull { entry ->
+            val parts = partsOf(entry)
+            if (parts.titleVariants.isEmpty()) return@mapNotNull null
+            val artistMatched = when {
+                queryArtistSegments.isEmpty() -> false
+                parts.artistSegments.isEmpty() -> false
+                parts.artistSegments.any { it in queryArtistSegments } -> true
+                else -> return@mapNotNull null
+            }
+            val distance = queryVariants
+                .flatMap { query ->
+                    parts.titleVariants.mapNotNull { candidate ->
+                        // Equal lengths only, ever: a length
+                        // difference is an insertion or deletion,
+                        // and accepting one would break the
+                        // 爱/爱你 protection. The bound is the
+                        // compared pair's own length's bound.
+                        if (candidate.length != query.length) {
+                            null
+                        } else {
+                            levenshtein(query, candidate)
+                                .takeIf { it in 1..fuzzyMaxDistance(query.length) }
+                        }
+                    }
+                }
+                .minOrNull() ?: return@mapNotNull null
+            Triple(entry, distance, artistMatched)
+        }
+        if (scored.isEmpty()) return null
+        // Artist-matching candidates outrank the rest BEFORE the
+        // distance comparison: the deciding tier is the highest
+        // non-empty one, and the winner is the unique minimum
+        // inside it.
+        val tier = if (scored.any { it.third }) {
+            scored.filter { it.third }
+        } else {
+            scored
+        }
+        val minimum = tier.minOf { it.second }
+        val winners = tier.filter { it.second == minimum }
+        return if (winners.size == 1) winners.single().first else null
     }
 
     /**
@@ -439,14 +640,15 @@ object LocalLyricsMatcher {
     }
 
     /**
-     * A [matchDetailed] result: the matched files, and whether they
-     * came from the title-only fallback phase rather than the key
-     * ranking.
+     * A [matchDetailed] result: the matched files, and which
+     * relaxation produced them when the key ranking did not.
      */
     data class NameMatchResult(
         val files: List<IndexedLrcFile>,
         /** True when the key ranking matched nothing and the title-only phase produced these files. */
         val titleOnlyFallback: Boolean,
+        /** True when every exact phase matched nothing and the v1.0.25 fuzzy phase produced these files. */
+        val fuzzyMatch: Boolean = false,
     )
 
     /**
@@ -464,6 +666,13 @@ object LocalLyricsMatcher {
      * an exact-title file was indexed. It now runs whenever the key
      * ranking is empty — the ranking stays strictly first, so a file
      * that names the track's artist always beats a title-only file.
+     *
+     * Since v1.0.25, when the title-only phase also matches nothing,
+     * the fuzzy last resort runs ([fuzzyWinner] over the `.lrc`
+     * entries' title parts): a same-length title part one typo away
+     * can still return its file — the shape the 2026-11-13 device
+     * trace proved, where the TAG title itself was mistyped
+     * （优 for 犹） and every exact phase was right to miss.
      */
     fun match(
         title: String,
@@ -486,7 +695,24 @@ object LocalLyricsMatcher {
         val normalizedTitle = normalize(title)
         if (normalizedTitle.isEmpty()) return NameMatchResult(emptyList(), titleOnlyFallback = false)
         val byTitlePart = indexed.filter { entry -> titlePartMatches(entry, normalizedTitle) }
-        return NameMatchResult(byTitlePart, titleOnlyFallback = byTitlePart.isNotEmpty())
+        if (byTitlePart.isNotEmpty()) {
+            return NameMatchResult(byTitlePart, titleOnlyFallback = true)
+        }
+        val artistSegments = artists
+            .flatMap { splitArtists(it) }
+            .map { normalize(it) }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        val fuzzy = fuzzyWinner(
+            queryTitle = title,
+            queryArtistSegments = artistSegments,
+            entries = indexed,
+        ) { entry -> fileNameParts(entry.file.fileName, lrc = true) }
+        return if (fuzzy != null) {
+            NameMatchResult(listOf(fuzzy), titleOnlyFallback = false, fuzzyMatch = true)
+        } else {
+            NameMatchResult(emptyList(), titleOnlyFallback = false)
+        }
     }
 
     /**

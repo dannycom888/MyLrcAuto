@@ -40,7 +40,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Simplified and strips zero-width characters, so a Simplified tag
  * matches a Traditional file name and vice versa), and when the
  * name keys match nothing, an exact title-part match is accepted as a last
- * resort regardless of the file's artist part. When several files match, the
+ * resort regardless of the file's artist part. Since v1.0.25 both steps
+ * end in a conservative fuzzy phase: a same-length title part within a
+ * small Levenshtein distance of the reported title can still match,
+ * for tags whose title itself is mistyped (a homophone typo makes
+ * every exact check miss the correctly named files). When several files match, the
  * one whose last lyric timestamp is closest to the track duration wins.
  * `.lrc` files are decoded as UTF-8 first and as GBK when that fails.
  */
@@ -331,10 +335,13 @@ class LocalLyricsProvider(
                     is ParseAttempt.Parsed -> {
                         winnerFile = lrcEntry.file.fileName
                         parsedLineCount = attempt.document.lines.size
-                        matchStep = if (audioMatch?.titleOnlyRetry == true) {
-                            LookupMatchStep.AUDIO_TITLE_ONLY
-                        } else {
-                            LookupMatchStep.AUDIO_WITH_ARTIST
+                        matchStep = when {
+                            audioMatch?.fuzzyMatch == true ->
+                                LookupMatchStep.FUZZY
+                            audioMatch?.titleOnlyRetry == true ->
+                                LookupMatchStep.AUDIO_TITLE_ONLY
+                            else ->
+                                LookupMatchStep.AUDIO_WITH_ARTIST
                         }
                         _lastLookup.value = trace(LookupOutcome.FOUND_SAME_STEM, index)
                         return attempt.document
@@ -391,10 +398,10 @@ class LocalLyricsProvider(
         val document = parsed.first { it.first == winner }.second
         winnerFile = winner.file.fileName
         parsedLineCount = document.lines.size
-        matchStep = if (nameMatch.titleOnlyFallback) {
-            LookupMatchStep.NAME_TITLE_ONLY
-        } else {
-            LookupMatchStep.NAME_WITH_ARTIST
+        matchStep = when {
+            nameMatch.fuzzyMatch -> LookupMatchStep.FUZZY
+            nameMatch.titleOnlyFallback -> LookupMatchStep.NAME_TITLE_ONLY
+            else -> LookupMatchStep.NAME_WITH_ARTIST
         }
         _lastLookup.value = trace(LookupOutcome.FOUND_METADATA, index)
         return document

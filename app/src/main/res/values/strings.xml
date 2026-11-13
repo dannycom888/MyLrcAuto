@@ -92,6 +92,7 @@
     <string name="settings_lrcdiag_step_audio_title">Audio file, same-stem (title only)</string>
     <string name="settings_lrcdiag_step_name_artist">By name (artist + title)</string>
     <string name="settings_lrcdiag_step_name_title">By name (title only)</string>
+    <string name="settings_lrcdiag_step_fuzzy">Fuzzy match</string>
     <string name="settings_lrcdiag_codepoints">Title codepoints</string>
     <string name="settings_lrcdiag_closest">Closest file names</string>
 

@@ -92,6 +92,7 @@
     <string name="settings_lrcdiag_step_audio_title">音频同名配对（只按歌名）</string>
     <string name="settings_lrcdiag_step_name_artist">按名匹配（歌手+歌名）</string>
     <string name="settings_lrcdiag_step_name_title">按名匹配（只按歌名）</string>
+    <string name="settings_lrcdiag_step_fuzzy">近似匹配</string>
     <string name="settings_lrcdiag_codepoints">歌名码点</string>
     <string name="settings_lrcdiag_closest">最接近的文件名</string>
 

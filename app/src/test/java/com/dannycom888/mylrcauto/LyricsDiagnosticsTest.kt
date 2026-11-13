@@ -239,6 +239,32 @@ class LyricsDiagnosticsTest {
     }
 
     @Test
+    fun rowsForAFuzzyHitCarryTheFuzzyStep() {
+        // v1.0.25: a lookup the fuzzy last resort produced carries
+        // the FUZZY step into the MATCH_STEP row, so a trace shows
+        // the near-match for what it was.
+        val byLabel = rowsByLabel(
+            LyricsIndexDiag(LyricsIndexState.READY, 1092),
+            trace(
+                outcome = LookupOutcome.FOUND_METADATA,
+                audioFileFound = true,
+                titleCheckPassed = false,
+                fallbackMatchCount = 1,
+                matchStep = LookupMatchStep.FUZZY,
+                titleCodepoints = "4E0D 518D 4F18 8C6B",
+            ),
+        )
+        assertEquals(
+            DiagValue.MatchStep(LookupMatchStep.FUZZY),
+            byLabel[LyricsDiagLabel.MATCH_STEP],
+        )
+        assertEquals(
+            DiagValue.Outcome(LookupOutcome.FOUND_METADATA),
+            byLabel[LyricsDiagLabel.OUTCOME],
+        )
+    }
+
+    @Test
     fun rowsForANotFoundShowTheFallbackRanAndMatchedNothing() {
         val byLabel = rowsByLabel(
             LyricsIndexDiag(LyricsIndexState.READY, 1092),

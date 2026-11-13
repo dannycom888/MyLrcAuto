@@ -514,4 +514,56 @@ class LyricsLookupTraceTest {
         assertEquals(1, diag.audioCount)
         assertEquals(3, diag.droppedCount)
     }
+
+    @Test
+    fun typoTagTitleHitsViaFuzzyStep() {
+        // The v1.0.24 device trace, verbatim (user screenshot
+        // 2026-11-13 00:18:34, "不再犹豫", Poweramp): the title
+        // codepoints row reads 4E0D 518D 4F18 8C6B — the title
+        // Poweramp reports is 不再优豫, with 优 (U+4F18) instead
+        // of 犹 (U+72B9): a homophone TYPO in the MP3's tag. The
+        // files are named correctly (the closest-names row showed
+        // "Beyond - 不再犹豫.lrc"), so the matcher was RIGHT to
+        // miss on every exact phase. On v1.0.24 code this fetch is
+        // the recorded NO_MATCH; v1.0.25's fuzzy last resort is
+        // what resolves it, and the trace names the step.
+        val provider = providerFor(beyondSource())
+
+        val document = runBlocking {
+            provider.fetch(
+                TrackInfo(
+                    title = "不再优豫",
+                    artist = "Beyond",
+                    album = "",
+                    durationMs = 231_000L,
+                    packageName = "com.maxmpz.audioplayer",
+                ),
+            )
+        }
+        assertNotNull(document)
+        assertEquals(50, document!!.lines.size)
+
+        val trace = provider.lastLookup.value!!
+        // The fuzzy AUDIO phase finds the playing file — but a
+        // fuzzy audio hit is a normal audio hit, so its same-stem
+        // .lrc still faces the exact title guard, and the guard
+        // (correctly, on exact terms) rejects it: the title parts
+        // differ by the typo. The trace keeps both facts visible.
+        assertEquals(true, trace.audioFileFound)
+        assertEquals("Beyond - 不再犹豫.lrc", trace.sameStemCandidate)
+        assertEquals(false, trace.titleCheckPassed)
+        // The fuzzy NAME phase then returns the same song's .lrc.
+        assertEquals(1, trace.fallbackMatchCount)
+        assertEquals("Beyond - 不再犹豫.lrc", trace.winnerFile)
+        assertEquals(50, trace.parsedLineCount)
+        assertEquals(LookupOutcome.FOUND_METADATA, trace.outcome)
+        assertEquals(LookupMatchStep.FUZZY, trace.matchStep)
+        // The device trace's own evidence rows, verbatim: the
+        // mistyped title's codepoints, and a raw probe of 0/0 —
+        // no stored name contains the TYPO either. Probe 0/0 with
+        // a hit is now also the fuzzy signature.
+        assertEquals("4E0D 518D 4F18 8C6B", trace.titleCodepoints)
+        assertEquals(0, trace.rawProbeLrcCount)
+        assertEquals(0, trace.rawProbeAudioCount)
+    }
 }
