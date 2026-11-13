@@ -45,6 +45,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Context
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
+import com.dannycom888.mylrcauto.car.CarGlanceKind
+import com.dannycom888.mylrcauto.car.CarPaneKind
+import com.dannycom888.mylrcauto.car.CarRenderRecord
 import com.dannycom888.mylrcauto.car.LaunchDecision
 import com.dannycom888.mylrcauto.car.LaunchEntry
 import com.dannycom888.mylrcauto.car.LaunchRecord
@@ -103,7 +106,7 @@ private fun appVersionName(context: Context): String = runCatching {
     info.versionName
 }.getOrNull() ?: ""
 
-/** One label/value row of the last-launch diagnostics block. */
+/** One label/value row of a diagnostics block. */
 @Composable
 private fun DiagRow(label: String, value: String) {
     Row(
@@ -117,9 +120,15 @@ private fun DiagRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
+        // Weighted (v1.0.27): an unweighted value is measured
+        // first and can squeeze itself into a narrow vertical
+        // strip — the long codepoints hex did exactly that. With
+        // both sides weighted, a long value wraps inside its own
+        // column instead.
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1.5f),
         )
     }
 }
@@ -199,6 +208,104 @@ private fun LaunchDiagnosticsSection(record: LaunchRecord?) {
                 LaunchDecision.FINISH_TO_DASHBOARD -> R.string.settings_diag_decision_dash
             },
         ),
+    )
+}
+
+/**
+ * The most recent big-screen render, as the car screen recorded
+ * it (v1.0.27): which pane it returned, what the lyrics side had,
+ * the surface facts the choice was made from, and the exception
+ * when the fallback fired. This is the evidence that separates
+ * the three title-and-artist-only shapes a broken big screen can
+ * be — screenshot it after a car run that looks wrong.
+ */
+@Composable
+private fun CarRenderDiagnosticsSection(record: CarRenderRecord?) {
+    Text(
+        text = stringResource(R.string.settings_renderdiag_title),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
+    if (record == null) {
+        Text(
+            text = stringResource(R.string.settings_renderdiag_none),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        return
+    }
+    val none = stringResource(R.string.settings_diag_empty_value)
+    val yes = stringResource(R.string.settings_diag_yes)
+    val no = stringResource(R.string.settings_diag_no)
+    fun yesNo(value: Boolean): String = if (value) yes else no
+    Spacer(modifier = Modifier.height(4.dp))
+    DiagRow(
+        stringResource(R.string.settings_diag_time),
+        formatLaunchTimestamp(record.timestampMs),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_pane),
+        stringResource(
+            when (record.pane) {
+                CarPaneKind.ON_SURFACE -> R.string.settings_renderdiag_pane_surface
+                CarPaneKind.LYRICS -> R.string.settings_renderdiag_pane_lyrics
+                CarPaneKind.NEUTRAL -> R.string.settings_renderdiag_pane_neutral
+                CarPaneKind.MESSAGE -> R.string.settings_renderdiag_pane_message
+                CarPaneKind.EMERGENCY -> R.string.settings_renderdiag_pane_emergency
+            },
+        ),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_glance),
+        stringResource(
+            when (record.glance) {
+                CarGlanceKind.NOW -> R.string.settings_renderdiag_glance_now
+                CarGlanceKind.LOOKING -> R.string.settings_renderdiag_glance_looking
+                CarGlanceKind.NONE -> R.string.settings_renderdiag_glance_none
+                CarGlanceKind.SILENT -> R.string.settings_renderdiag_glance_silent
+                CarGlanceKind.UNTIMED -> R.string.settings_renderdiag_glance_untimed
+                CarGlanceKind.NO_PERMISSION -> R.string.settings_renderdiag_glance_permission
+            },
+        ),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_lines),
+        record.lineCount.toString(),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_surface),
+        yesNo(record.surfaceLive),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_surface_width),
+        record.surfaceWidthDp?.let { "${it.roundToInt()} dp" } ?: none,
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_area),
+        stringResource(
+            when {
+                !record.visibleAreaReported -> R.string.settings_renderdiag_area_none
+                record.visibleAreaEmpty -> R.string.settings_renderdiag_area_empty
+                else -> R.string.settings_renderdiag_area_ok
+            },
+        ),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_started),
+        yesNo(record.screenStarted),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_api),
+        record.apiLevel.toString(),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_error),
+        when {
+            record.errorClass == null -> none
+            record.errorMessage == null -> record.errorClass
+            else -> "${record.errorClass}: ${record.errorMessage}"
+        },
     )
 }
 
@@ -314,6 +421,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val context = LocalContext.current
     val settings by container.settings.settings.collectAsStateWithLifecycle()
     val lastLaunch by container.launchDiagnostics.last.collectAsStateWithLifecycle()
+    val lastRender by container.carRenderDiagnostics.last.collectAsStateWithLifecycle()
     val lyricsIndexDiag by container.localFolderLyrics.indexDiag.collectAsStateWithLifecycle()
     val lastLookup by container.localFolderLyrics.lastLookup.collectAsStateWithLifecycle()
 
@@ -575,6 +683,14 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
         Spacer(modifier = Modifier.height(24.dp))
 
         LaunchDiagnosticsSection(lastLaunch)
+
+        // Big screen render (v1.0.27 diagnostics): which pane the
+        // car screen last returned, what the lyrics side had, and
+        // the exception when it fell back — the evidence for a big
+        // screen that shows only the title and artist.
+        Spacer(modifier = Modifier.height(24.dp))
+
+        CarRenderDiagnosticsSection(lastRender)
 
         // Version, read from the package so it updates every release —
         // and the about line below it. Both sit at the bottom of a

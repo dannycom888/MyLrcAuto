@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">My LRC Auto</string>
-    <string name="notification_listener_label">My LRC Auto notification listener</string>
+    <string name="app_name">MyLRC Auto</string>
+    <string name="notification_listener_label">MyLRC Auto notification listener</string>
     <string name="mirror_notification_channel">Lyrics mirror</string>
     <string name="mirror_notification_text">Mirroring the current lyric line to the car.</string>
 
@@ -40,7 +40,7 @@
     <string name="settings_font_bauhaus">Regular script</string>
     <string name="settings_keep_screen_on_title">Keep screen on</string>
     <string name="settings_keep_screen_on_summary">The screen stays on while lyrics are showing.</string>
-    <string name="settings_about">My LRC Auto — local lyrics only, no network.</string>
+    <string name="settings_about">MyLRC Auto — local lyrics only, no network.</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_diag_title">Last car launch</string>
     <string name="settings_diag_none">No car launch recorded yet</string>
@@ -96,6 +96,32 @@
     <string name="settings_lrcdiag_codepoints">Title codepoints</string>
     <string name="settings_lrcdiag_closest">Closest file names</string>
     <string name="settings_lrcdiag_closest_codepoints">Closest name codepoints</string>
+
+    <string name="settings_renderdiag_title">Big screen render</string>
+    <string name="settings_renderdiag_none">No big screen render recorded yet</string>
+    <string name="settings_renderdiag_pane">Pane shown</string>
+    <string name="settings_renderdiag_pane_surface">Surface (full lyrics)</string>
+    <string name="settings_renderdiag_pane_lyrics">Lyrics pane</string>
+    <string name="settings_renderdiag_pane_neutral">Title/artist pane</string>
+    <string name="settings_renderdiag_pane_message">Message pane</string>
+    <string name="settings_renderdiag_pane_emergency">Emergency pane</string>
+    <string name="settings_renderdiag_glance">Lyrics state</string>
+    <string name="settings_renderdiag_glance_now">Lyrics showing</string>
+    <string name="settings_renderdiag_glance_looking">Looking up</string>
+    <string name="settings_renderdiag_glance_none">No lyrics found</string>
+    <string name="settings_renderdiag_glance_silent">Nothing playing</string>
+    <string name="settings_renderdiag_glance_untimed">Lyrics without timing</string>
+    <string name="settings_renderdiag_glance_permission">No notification access</string>
+    <string name="settings_renderdiag_lines">Lyric lines available</string>
+    <string name="settings_renderdiag_surface">Surface live</string>
+    <string name="settings_renderdiag_surface_width">Surface width</string>
+    <string name="settings_renderdiag_area">Visible area</string>
+    <string name="settings_renderdiag_area_none">Not reported</string>
+    <string name="settings_renderdiag_area_empty">Reported, empty</string>
+    <string name="settings_renderdiag_area_ok">Reported</string>
+    <string name="settings_renderdiag_started">Screen in foreground</string>
+    <string name="settings_renderdiag_api">Host API level</string>
+    <string name="settings_renderdiag_error">Fallback cause</string>
 
     <string name="car_silent">Nothing playing</string>
     <string name="car_silent_body">Start a song in Poweramp and the words will show here.</string>

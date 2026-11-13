@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import androidx.car.app.connection.CarConnection
 import androidx.lifecycle.Observer
+import com.dannycom888.mylrcauto.car.CarRenderDiagnosticsStore
 import com.dannycom888.mylrcauto.car.LaunchConnectionState
 import com.dannycom888.mylrcauto.car.LaunchDiagnosticsStore
 import com.dannycom888.mylrcauto.lyrics.LocalFolderSource
@@ -112,6 +113,9 @@ class MyLrcAutoApp : Application() {
 
         /** The most recent car launch's decision inputs and outcome (Settings diagnostics). */
         val launchDiagnostics: LaunchDiagnosticsStore = LaunchDiagnosticsStore(context)
+
+        /** The most recent big-screen render's pane, inputs and fallback cause (Settings diagnostics). */
+        val carRenderDiagnostics: CarRenderDiagnosticsStore = CarRenderDiagnosticsStore(context)
 
         val settings: SettingsStore = SettingsStore(context)
 

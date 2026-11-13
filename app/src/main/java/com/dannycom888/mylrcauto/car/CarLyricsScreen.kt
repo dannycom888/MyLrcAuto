@@ -18,6 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import android.util.Log
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
+import com.dannycom888.mylrcauto.lyrics.LyricsState
 import com.dannycom888.mylrcauto.media.Transport
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -147,49 +148,124 @@ class CarLyricsScreen(
         // answering with whatever was true a second ago would put a stale
         // line on the screen.
         //
-        // Guarded: a template that throws takes the whole car app down with
-        // the host's "unexpected error" dialog, and a bad bitmap or a bad
-        // line is not worth that. The answer is real content — the neutral
-        // pane (title + artist) built by [emergencyPane] — never a loading
-        // pane and never any error text: v1.0.19's catch answered with a
-        // loading pane, and a build that kept failing (or a lookup that
-        // never landed) left the big screen on an endless spinner with
-        // nothing on it. The next tick recomposes and replaces this pane
-        // the moment a full compose succeeds again.
-        return try {
-            val content = compose()
-            shown = content
-            content.toTemplate()
+        // Guarded in two stages, because the two failure points cost
+        // different things (v1.0.27). A compose that throws never produced
+        // a content at all, so the emergency pane is built from the raw
+        // snapshot, as before. A compose that SUCCEEDED carries real
+        // lyrics in its glance, though — so when only the template BUILD
+        // throws (an action the host's constraints reject, an icon that
+        // fails to wrap), the emergency pane is built from that content
+        // and keeps its lyric rows: the failure costs the chrome, not the
+        // words. Either way the answer is real content, never a loading
+        // pane and never any error text — v1.0.19's catch answered with a
+        // loading pane, and a build that kept failing left the big screen
+        // on an endless spinner with nothing on it.
+        //
+        // Every return also leaves a render record (see
+        // CarRenderDiagnostics): which pane went back, what the lyrics
+        // side had, and the exception when the catch fired — the
+        // 2026-11-13 photo (title and artist only, dead back arrow)
+        // matched three different panes, and nothing recorded which.
+        val content = try {
+            compose()
         } catch (e: Exception) {
-            Log.w(TAG, "template build failed, showing the neutral pane instead", e)
-            emergencyPane()
+            Log.w(TAG, "compose failed, showing the emergency pane instead", e)
+            recordRender(content = null, error = e)
+            return emergencyPane(content = null)
+        }
+        shown = content
+        return try {
+            val template = content.toTemplate()
+            recordRender(content, error = null)
+            template
+        } catch (e: Exception) {
+            Log.w(TAG, "template build failed, showing the emergency pane instead", e)
+            recordRender(content, error = e)
+            emergencyPane(content)
+        }
+    }
+
+    /** The last render record this screen wrote, for change-dedup (see [recordRender]). */
+    private var lastRenderRecord: CarRenderRecord? = null
+
+    /**
+     * Records what the big screen just answered (Settings → "Big
+     * screen render"), so the next car run names the pane instead of
+     * leaving a photo to guess from. Guarded end to end: diagnostics
+     * must never be the reason a template fails. Deduped on change —
+     * a pane that stays up across a hundred template asks (every
+     * line change asks again) leaves one record, not a hundred
+     * preference writes.
+     */
+    private fun recordRender(content: Content?, error: Exception?) {
+        runCatching {
+            val glance = content?.glance ?: runCatching {
+                val snapshot = container.media.snapshot.value
+                CarGlance.of(
+                    state = container.lyrics.state.value,
+                    hasTrack = snapshot.hasTrack,
+                    permissionGranted = container.media.permissionGranted.value,
+                    positionMs = snapshot.playback.currentMs(),
+                )
+            }.getOrDefault(CarGlance.None)
+            val record = carRenderRecord(
+                timestampMs = System.currentTimeMillis(),
+                onSurface = content?.onSurface ?: false,
+                glance = glance,
+                lineCount = runCatching {
+                    (container.lyrics.state.value as? LyricsState.Loaded)
+                        ?.document?.lines?.size ?: 0
+                }.getOrDefault(0),
+                surfaceLive = surface.live.value,
+                surfaceWidthDp = surface.surfaceWidthDp.value,
+                visibleAreaReported = surface.visibleArea.value != null,
+                visibleAreaEmpty = surface.visibleArea.value?.isEmpty == true,
+                screenStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+                apiLevel = carContext.carAppApiLevel,
+                error = error,
+            )
+            if (record.sameRenderAs(lastRenderRecord)) return
+            lastRenderRecord = record
+            container.carRenderDiagnostics.record(record)
         }
     }
 
     /**
-     * The last-resort template: the neutral pane (title + artist rows)
-     * built straight from the current snapshot, without [compose] —
-     * compose is what may have just thrown. Reading the snapshot and
-     * building rows from two strings cannot realistically fail; if the
-     * snapshot itself is unreadable, the app name alone fills the row.
-     * No transport strip: building actions is part of what this path is
-     * sheltering from, and the next successful compose restores them.
+     * The last-resort template, built when composing or building the
+     * real pane threw. With a [content] (the build failed, the
+     * compose did not) it keeps everything the failure did not touch:
+     * the title/artist row AND the lyric rows — an emergency pane
+     * that drops lyrics it already had is how a chrome failure became
+     * a blank big screen. Without one (compose itself threw) it is
+     * built straight from the current snapshot, as before: reading
+     * the snapshot and building rows from two strings cannot
+     * realistically fail, and if the snapshot itself is unreadable
+     * the app name alone fills the row. No transport strip either
+     * way: building actions is part of what this path is sheltering
+     * from, and the next successful compose restores them.
      */
-    private fun emergencyPane(): Template {
-        val snapshot = runCatching { container.media.snapshot.value }.getOrNull()
-        val trackTitle = snapshot?.track?.title?.takeIf { it.isNotBlank() }
-        val artist = snapshot?.track?.artist?.takeIf { it.isNotBlank() }.orEmpty()
+    private fun emergencyPane(content: Content?): Template {
+        val snapshot = if (content == null) {
+            runCatching { container.media.snapshot.value }.getOrNull()
+        } else {
+            null
+        }
+        val trackTitle = content?.title
+            ?: snapshot?.track?.title?.takeIf { it.isNotBlank() }
+            ?: carContext.getString(R.string.app_name)
+        val artist = content?.artist
+            ?: snapshot?.track?.artist?.takeIf { it.isNotBlank() }.orEmpty()
         val pane = Pane.Builder()
             .addRow(
                 Row.Builder()
-                    .setTitle(trackTitle ?: carContext.getString(R.string.app_name))
+                    .setTitle(trackTitle)
                     .apply { if (artist.isNotEmpty()) addText(artist) }
                     .build(),
             )
-            .build()
-        return PaneTemplate.Builder(pane)
+        (content?.glance as? CarGlance.Now)?.let { pane.addLyricRows(it) }
+        return PaneTemplate.Builder(pane.build())
             .setTitle(carContext.getString(R.string.app_name))
-            .setHeaderAction(Action.BACK)
+            .setHeaderAction(carPaneHeaderAction())
             .build()
     }
 
@@ -274,13 +350,13 @@ class CarLyricsScreen(
 
         val content = PaneTemplate.Builder(pane)
             .setTitle(carContext.getString(R.string.app_name))
-            .setHeaderAction(Action.BACK)
+            .setHeaderAction(carPaneHeaderAction())
             .build()
 
         val template = MapWithContentTemplate.Builder()
             .setContentTemplate(content)
 
-        transportStrip()?.let { template.setActionStrip(it) }
+        guardedTransportStrip()?.let { template.setActionStrip(it) }
         return template.build()
     }
 
@@ -326,39 +402,60 @@ class CarLyricsScreen(
             .build()
         val template = PaneTemplate.Builder(pane)
             .setTitle(carContext.getString(R.string.app_name))
-            .setHeaderAction(Action.BACK)
-        transportStrip()?.let { template.setActionStrip(it) }
+            .setHeaderAction(carPaneHeaderAction())
+        guardedTransportStrip()?.let { template.setActionStrip(it) }
         return template.build()
     }
 
     private fun Content.lyrics(glance: CarGlance.Now): Template {
-        val pane = Pane.Builder()
-
-        // Same three rows as the on-surface template: previous, current,
-        // next. The middle position identifies the current line, so the
-        // "Next:" prefix is gone.
-        glance.previous?.let { previous ->
-            pane.addRow(Row.Builder().setTitle(previous).build())
-        }
-
-        val current = Row.Builder()
-            .setTitle(
-                glance.line?.takeIf { it.isNotBlank() }
-                    ?: carContext.getString(R.string.car_instrumental),
-            )
-        pane.addRow(current.build())
-
-        glance.next?.let { next ->
-            pane.addRow(Row.Builder().setTitle(next).build())
-        }
+        val pane = Pane.Builder().addLyricRows(glance)
 
         val template = PaneTemplate.Builder(pane.build())
             .setTitle(title)
-            .setHeaderAction(Action.BACK)
+            .setHeaderAction(carPaneHeaderAction())
 
-        transportStrip()?.let { template.setActionStrip(it) }
+        guardedTransportStrip()?.let { template.setActionStrip(it) }
         return template.build()
     }
+
+    /**
+     * The fallback pane's three lyric rows — previous, current, next;
+     * the middle position identifies the current line, so there is no
+     * "Next:" prefix to read. Shared by the lyrics pane and the
+     * emergency pane (v1.0.27), so a template-build failure keeps the
+     * same words it would have shown anyway.
+     */
+    private fun Pane.Builder.addLyricRows(glance: CarGlance.Now): Pane.Builder {
+        glance.previous?.let { previous ->
+            addRow(Row.Builder().setTitle(previous).build())
+        }
+        addRow(
+            Row.Builder()
+                .setTitle(
+                    glance.line?.takeIf { it.isNotBlank() }
+                        ?: carContext.getString(R.string.car_instrumental),
+                )
+                .build(),
+        )
+        glance.next?.let { next ->
+            addRow(Row.Builder().setTitle(next).build())
+        }
+        return this
+    }
+
+    /**
+     * [transportStrip] behind a guard (v1.0.27): the strip is chrome,
+     * and building it touches the library's action constraints — the
+     * one part of a pane build with a known throw history (see
+     * [action]). A strip that fails now costs the buttons, not the
+     * whole pane: before, the throw escaped to onGetTemplate's catch
+     * and the driver got the title-only emergency pane instead of
+     * the lyrics the screen already had.
+     */
+    private fun Content.guardedTransportStrip(): ActionStrip? =
+        runCatching { transportStrip() }
+            .onFailure { Log.w(TAG, "transport strip failed, showing the pane without it", it) }
+            .getOrNull()
 
     /**
      * The transport row, or nothing at all.
@@ -424,7 +521,7 @@ class CarLyricsScreen(
     private fun message(title: Int, body: Int): Template =
         MessageTemplate.Builder(carContext.getString(body))
             .setTitle(carContext.getString(title))
-            .setHeaderAction(Action.BACK)
+            .setHeaderAction(carPaneHeaderAction())
             .build()
 
     private companion object {
@@ -480,3 +577,23 @@ internal fun shouldInvalidateOnStateChange(
     next: CarLyricsScreen.Content,
     shown: CarLyricsScreen.Content?,
 ): Boolean = next != shown
+
+/**
+ * The header action every big-screen pane carries — the ONE wiring
+ * point for it (v1.0.27).
+ *
+ * `Action.BACK` is the Car App Library's standard back action: the
+ * host gives it the arrow, and tapping it pops the screen — on this
+ * app's root screen, that is what leaves the big screen. The
+ * 2026-11-13 car test reported the arrow dead on the broken pane;
+ * every pane in this screen sets its header through this function,
+ * so the wiring cannot drift between the main panes and the
+ * emergency pane (the one the driver actually saw), and a unit
+ * test pins that the value handed over is the library's standard
+ * back action itself. What the host does with a correctly wired
+ * BACK on a root screen is the host's side of the contract — if a
+ * future car test still shows a dead arrow with this wiring in
+ * place, the render record (see CarRenderDiagnostics) is what
+ * separates "the pane was wrong" from "the host ignored it".
+ */
+internal fun carPaneHeaderAction(): Action = Action.BACK

@@ -159,6 +159,27 @@ fun CarLyricsContent(
     // backdrop is the app's own surface only: the host-drawn pane
     // (top-left box) is the car's UI and is never touched.
     val cover = snapshot.artwork?.takeUnless { it.isRecycled }
+    // The cover as a drawable bitmap, converted behind a guard
+    // (v1.0.27): the cover is one section of this screen, and turning
+    // the player's bitmap into an ImageBitmap can throw for one the
+    // surface cannot take (an unsupported config, or one recycled
+    // between the snapshot and this frame) — a throw inside
+    // composition would cost the LYRICS beside it, which are the
+    // screen's whole point. A cover that fails now costs only the
+    // cover: the fallback icon is tried, and if that fails too the
+    // box below is skipped. The bitmap's size is already bounded
+    // upstream — the snapshot's artwork is scaled to
+    // Artwork.MAX_DIMENSION_PX before it is ever kept.
+    val coverImage = remember(cover) {
+        runCatching { cover?.asImageBitmap() }.getOrNull()
+    }
+    // The M-note fallback, decoded in the composable body (the
+    // resource reader is itself composable, so it cannot live
+    // inside remember) and only on frames that need it — the same
+    // frames the old elvis decoded it on.
+    val coverBitmap = coverImage ?: runCatching {
+        ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)
+    }.getOrNull()
     Box(modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -174,9 +195,8 @@ fun CarLyricsContent(
         // — the same colour as the glowing current lyric line. Shown
         // only while a track is playing; without a visible area yet
         // there is no column to put it in, so it stays hidden.
-        if (snapshot.hasTrack && coverPlacement != null) {
-            val smallCover = cover?.asImageBitmap()
-                ?: ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)
+        if (snapshot.hasTrack && coverPlacement != null && coverBitmap != null) {
+            val smallCover = coverBitmap
             val glow = MaterialTheme.colorScheme.secondary
             Box(
                 modifier = Modifier

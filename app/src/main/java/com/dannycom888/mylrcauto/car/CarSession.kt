@@ -149,22 +149,7 @@ class CarSession(
             MirrorServiceControl.start(carContext.applicationContext)
         }
 
-        // Asked for once, here, rather than when a screen appears: the host
-        // answers whenever it is ready, and a callback registered later can
-        // miss the surface it already offered.
-        //
-        // Not asked for at all on a host below car API 7, which is the level
-        // MapWithContentTemplate needs — the one template that can carry a
-        // surface here. An older host can still hand one over, and accepting
-        // it would mean standing up a virtual display, a presentation and a
-        // whole composition to draw something no template of ours could put
-        // on screen.
-        if (carContext.carAppApiLevel >= CarAppApiLevels.LEVEL_7) {
-            runCatching {
-                carContext.getCarService(AppManager::class.java)
-                    .setSurfaceCallback(CarSurface(this, app, surface))
-            }
-        }
+        ensureSurfaceCallback(app)
 
         return CarLyricsScreen(carContext, app, surface)
     }
@@ -196,11 +181,16 @@ class CarSession(
                 " -> $decision",
         )
         when (decision) {
-            LaunchDecision.SHOW_BIG_SCREEN ->
+            LaunchDecision.SHOW_BIG_SCREEN -> {
                 // The big screen is this session's only screen and
                 // is already on its stack; the host brings the app
-                // forward itself. Just keep the launch memory true.
+                // forward itself. Keep the launch memory true — and
+                // make sure the surface callback exists (below): a
+                // session created through the FINISH path never
+                // registered one.
                 app.launchConnectionState.onBigScreenShown()
+                ensureSurfaceCallback(app)
+            }
 
             LaunchDecision.FINISH_TO_DASHBOARD ->
                 // The session is live, so the finish can go out at
@@ -209,6 +199,52 @@ class CarSession(
                 runCatching { carContext.finishCarApp() }
                     .onFailure { Log.w(TAG, "finishCarApp failed; staying on the big screen", it) }
         }
+    }
+
+    /**
+     * The surface callback, created at most once per session: its
+     * constructor registers a lifecycle observer on the session, so
+     * a second instance would double the surface's bookkeeping.
+     */
+    private var surfaceCallback: CarSurface? = null
+
+    /**
+     * Registers the surface callback, if this session has not yet:
+     * the door to the app's own drawing surface, without which the
+     * big screen can only ever be the template fallback.
+     *
+     * Asked for from the two places that show the big screen —
+     * onCreateScreen's show path, and onNewIntent's. The second is
+     * the one that mattered (v1.0.27, code-proven gap): a session
+     * created by an icon tap returns from onCreateScreen through
+     * the FINISH path, before any registration; the launch record
+     * from the 2026-11-13 car test (entry onNewIntent, decision
+     * SHOW_BIG_SCREEN) proves the card tap can land on exactly such
+     * a still-live session, and nothing on that path ever
+     * registered a callback for it — so no surface could arrive,
+     * and the big screen was stuck on the fallback pane. Asking
+     * here is idempotent by construction (one instance, created
+     * once), so the show path asking again costs nothing.
+     *
+     * Asked for once rather than when a screen appears: the host
+     * answers whenever it is ready, and a callback registered later
+     * can miss the surface it already offered.
+     *
+     * Not asked for at all on a host below car API 7, which is the
+     * level MapWithContentTemplate needs — the one template that
+     * can carry a surface here. An older host can still hand one
+     * over, and accepting it would mean standing up a virtual
+     * display, a presentation and a whole composition to draw
+     * something no template of ours could put on screen.
+     */
+    private fun ensureSurfaceCallback(app: AppContainer) {
+        if (carContext.carAppApiLevel < CarAppApiLevels.LEVEL_7) return
+        val callback = surfaceCallback ?: CarSurface(this, app, surface).also {
+            surfaceCallback = it
+        }
+        runCatching {
+            carContext.getCarService(AppManager::class.java).setSurfaceCallback(callback)
+        }.onFailure { Log.w(TAG, "could not register the surface callback", it) }
     }
 
     /**

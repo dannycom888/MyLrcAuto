@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">My LRC Auto</string>
-    <string name="notification_listener_label">My LRC Auto 通知监听</string>
+    <string name="app_name">MyLRC Auto</string>
+    <string name="notification_listener_label">MyLRC Auto 通知监听</string>
     <string name="mirror_notification_channel">歌词同步</string>
     <string name="mirror_notification_text">正在把当前歌词同步到车机。</string>
 
@@ -40,7 +40,7 @@
     <string name="settings_font_bauhaus">楷书</string>
     <string name="settings_keep_screen_on_title">保持屏幕常亮</string>
     <string name="settings_keep_screen_on_summary">显示歌词时，屏幕不会自动熄灭。</string>
-    <string name="settings_about">My LRC Auto——只读本地歌词，不联网。</string>
+    <string name="settings_about">MyLRC Auto——只读本地歌词，不联网。</string>
     <string name="settings_version">版本 %1$s</string>
     <string name="settings_diag_title">上次在车上打开</string>
     <string name="settings_diag_none">还没有记录</string>
@@ -96,6 +96,32 @@
     <string name="settings_lrcdiag_codepoints">歌名码点</string>
     <string name="settings_lrcdiag_closest">最接近的文件名</string>
     <string name="settings_lrcdiag_closest_codepoints">最接近文件名码点</string>
+
+    <string name="settings_renderdiag_title">大屏显示</string>
+    <string name="settings_renderdiag_none">还没有大屏显示记录</string>
+    <string name="settings_renderdiag_pane">显示的画面</string>
+    <string name="settings_renderdiag_pane_surface">表面（整首歌词）</string>
+    <string name="settings_renderdiag_pane_lyrics">歌词窗格</string>
+    <string name="settings_renderdiag_pane_neutral">只有歌名歌手</string>
+    <string name="settings_renderdiag_pane_message">提示窗格</string>
+    <string name="settings_renderdiag_pane_emergency">紧急窗格</string>
+    <string name="settings_renderdiag_glance">歌词状态</string>
+    <string name="settings_renderdiag_glance_now">有歌词</string>
+    <string name="settings_renderdiag_glance_looking">正在查找</string>
+    <string name="settings_renderdiag_glance_none">没找到歌词</string>
+    <string name="settings_renderdiag_glance_silent">没有在放歌</string>
+    <string name="settings_renderdiag_glance_untimed">歌词没有时间轴</string>
+    <string name="settings_renderdiag_glance_permission">没有通知权限</string>
+    <string name="settings_renderdiag_lines">歌词行数</string>
+    <string name="settings_renderdiag_surface">表面已连接</string>
+    <string name="settings_renderdiag_surface_width">表面宽度</string>
+    <string name="settings_renderdiag_area">可见区域</string>
+    <string name="settings_renderdiag_area_none">未报告</string>
+    <string name="settings_renderdiag_area_empty">已报告（空）</string>
+    <string name="settings_renderdiag_area_ok">已报告</string>
+    <string name="settings_renderdiag_started">大屏在前台</string>
+    <string name="settings_renderdiag_api">车机 API 级别</string>
+    <string name="settings_renderdiag_error">回退原因</string>
 
     <string name="car_silent">没有在放歌</string>
     <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>
