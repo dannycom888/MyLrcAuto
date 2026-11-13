@@ -39,8 +39,8 @@ android {
         applicationId = "com.dannycom888.mylrcauto"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "1.0.21"
+        versionCode = 24
+        versionName = "1.0.22"
     }
 
     if (canSignRelease) {
@@ -74,6 +74,13 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // v1.0.22: the lookup-trace tests drive the provider's walk-
+        // failure path, which logs through android.util.Log — with
+        // the default stub that call throws "not mocked" and would
+        // mask the very failure under test. Default return values
+        // keep android.jar stubs inert in JVM tests; production
+        // behaviour is untouched.
+        unitTests.isReturnDefaultValues = true
     }
 }
 

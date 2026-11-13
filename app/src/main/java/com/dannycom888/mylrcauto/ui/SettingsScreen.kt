@@ -49,7 +49,14 @@ import com.dannycom888.mylrcauto.car.LaunchDecision
 import com.dannycom888.mylrcauto.car.LaunchEntry
 import com.dannycom888.mylrcauto.car.LaunchRecord
 import com.dannycom888.mylrcauto.car.formatLaunchTimestamp
+import com.dannycom888.mylrcauto.lyrics.DiagValue
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
+import com.dannycom888.mylrcauto.lyrics.LookupOutcome
+import com.dannycom888.mylrcauto.lyrics.LookupTrace
+import com.dannycom888.mylrcauto.lyrics.LyricsDiagLabel
+import com.dannycom888.mylrcauto.lyrics.LyricsIndexDiag
+import com.dannycom888.mylrcauto.lyrics.LyricsIndexState
+import com.dannycom888.mylrcauto.lyrics.lyricsDiagRows
 import com.dannycom888.mylrcauto.settings.AppLanguage
 import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import com.dannycom888.mylrcauto.settings.SettingsStore
@@ -194,6 +201,80 @@ private fun LaunchDiagnosticsSection(record: LaunchRecord?) {
     )
 }
 
+/** Label string for one lyrics-diagnostics row. */
+private fun lyricsDiagLabelRes(label: LyricsDiagLabel): Int = when (label) {
+    LyricsDiagLabel.INDEX_STATE -> R.string.settings_lrcdiag_index_state
+    LyricsDiagLabel.INDEX_COUNT -> R.string.settings_lrcdiag_index_count
+    LyricsDiagLabel.LOOKUP_TIME -> R.string.settings_diag_time
+    LyricsDiagLabel.TRACK -> R.string.settings_lrcdiag_track
+    LyricsDiagLabel.SOURCE -> R.string.settings_lrcdiag_source
+    LyricsDiagLabel.AUDIO_FOUND -> R.string.settings_lrcdiag_audio_found
+    LyricsDiagLabel.SAME_STEM -> R.string.settings_lrcdiag_same_stem
+    LyricsDiagLabel.TITLE_CHECK -> R.string.settings_lrcdiag_title_check
+    LyricsDiagLabel.FALLBACK_MATCHES -> R.string.settings_lrcdiag_fallback
+    LyricsDiagLabel.WINNER_FILE -> R.string.settings_lrcdiag_winner
+    LyricsDiagLabel.PARSED_LINES -> R.string.settings_lrcdiag_parsed_lines
+    LyricsDiagLabel.READ_ISSUES -> R.string.settings_lrcdiag_read_issues
+    LyricsDiagLabel.OUTCOME -> R.string.settings_lrcdiag_outcome
+}
+
+/** Label string for an index state. */
+private fun lyricsIndexStateRes(state: LyricsIndexState): Int = when (state) {
+    LyricsIndexState.NO_FOLDER -> R.string.settings_lrcdiag_state_no_folder
+    LyricsIndexState.BUILDING -> R.string.settings_lrcdiag_state_building
+    LyricsIndexState.READY -> R.string.settings_lrcdiag_state_ready
+    LyricsIndexState.UNREADABLE -> R.string.settings_lrcdiag_state_unreadable
+}
+
+/** Label string for a lookup outcome. */
+private fun lookupOutcomeRes(outcome: LookupOutcome): Int = when (outcome) {
+    LookupOutcome.FOUND_SAME_STEM -> R.string.settings_lrcdiag_outcome_stem
+    LookupOutcome.FOUND_METADATA -> R.string.settings_lrcdiag_outcome_meta
+    LookupOutcome.NOT_FOUND -> R.string.settings_lrcdiag_outcome_not_found
+    LookupOutcome.PARSE_EMPTY -> R.string.settings_lrcdiag_outcome_parse_empty
+    LookupOutcome.READ_FAILED -> R.string.settings_lrcdiag_outcome_read_failed
+    LookupOutcome.ERROR -> R.string.settings_lrcdiag_outcome_error
+}
+
+/**
+ * The lyrics index state and the most recent lookup's trace
+ * (v1.0.22): what the player reported for the track, and which
+ * step of the lookup failed when the lyrics area is empty. The
+ * rows come from the pure [lyricsDiagRows]; this composable only
+ * localizes them. Screenshot it next to a song that shows no
+ * lyrics — the trace names the failing step.
+ */
+@Composable
+private fun LyricsDiagnosticsSection(indexDiag: LyricsIndexDiag, lookup: LookupTrace?) {
+    Text(
+        text = stringResource(R.string.settings_lrcdiag_title),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
+    if (lookup == null) {
+        Text(
+            text = stringResource(R.string.settings_lrcdiag_none),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+    Spacer(modifier = Modifier.height(4.dp))
+    val yes = stringResource(R.string.settings_diag_yes)
+    val no = stringResource(R.string.settings_diag_no)
+    for (row in lyricsDiagRows(indexDiag, lookup)) {
+        DiagRow(
+            label = stringResource(lyricsDiagLabelRes(row.label)),
+            value = when (val value = row.value) {
+                is DiagValue.Text -> value.text
+                is DiagValue.YesNo -> if (value.value) yes else no
+                is DiagValue.IndexState -> stringResource(lyricsIndexStateRes(value.state))
+                is DiagValue.Outcome -> stringResource(lookupOutcomeRes(value.outcome))
+            },
+        )
+    }
+}
+
 /**
  * Settings: language switch at the top, lyrics size slider, lyrics font
  * choice (original / Bauhaus), keep-screen-on switch, lyrics folder
@@ -209,6 +290,8 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val context = LocalContext.current
     val settings by container.settings.settings.collectAsStateWithLifecycle()
     val lastLaunch by container.launchDiagnostics.last.collectAsStateWithLifecycle()
+    val lyricsIndexDiag by container.localFolderLyrics.indexDiag.collectAsStateWithLifecycle()
+    val lastLookup by container.localFolderLyrics.lastLookup.collectAsStateWithLifecycle()
 
     var rescanMessage by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
@@ -453,6 +536,13 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
+
+        // Lyrics lookup diagnostics (v1.0.22): the index state and
+        // the last lookup's inputs + step-by-step outcome — the
+        // evidence that says WHY a song shows no lyrics.
+        Spacer(modifier = Modifier.height(24.dp))
+
+        LyricsDiagnosticsSection(lyricsIndexDiag, lastLookup)
 
         // Last car launch (item-7 diagnostics): what the head unit
         // sent for the most recent tap — icon or card — and what

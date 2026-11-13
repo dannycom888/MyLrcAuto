@@ -82,6 +82,38 @@ class LocalLyricsProvider(
      */
     val indexVersion: StateFlow<Long> = _indexVersion.asStateFlow()
 
+    private val _indexDiag = MutableStateFlow(
+        LyricsIndexDiag(
+            state = lyricsIndexState(
+                configured = hasFolder(),
+                walkInFlight = false,
+                lastError = false,
+                hasIndex = false,
+            ),
+            lrcCount = null,
+        ),
+    )
+
+    /**
+     * Where the served index stands (state + `.lrc` count), for the
+     * Settings lyrics-diagnostics block. Republished whenever the
+     * facts behind [lyricsIndexState] change — see [refreshIndexDiag].
+     */
+    val indexDiag: StateFlow<LyricsIndexDiag> = _indexDiag.asStateFlow()
+
+    private val _lastLookup = MutableStateFlow<LookupTrace?>(null)
+
+    /**
+     * The most recent lookup's inputs and step-by-step outcome, for
+     * the Settings lyrics-diagnostics block (v1.0.22): a missed
+     * lookup renders as a literally empty area on the phone, so
+     * this trace is the only place the failing step is visible.
+     */
+    val lastLookup: StateFlow<LookupTrace?> = _lastLookup.asStateFlow()
+
+    /** True while a folder walk (cold walk or background rebuild) is running. */
+    private val walkInFlight = AtomicBoolean(false)
+
     private val indexMutex = Mutex()
 
     /** True while a background rebuild (after serving a disk cache) is running. */
@@ -123,6 +155,26 @@ class LocalLyricsProvider(
     fun invalidate() {
         cachedIndex = null
         lastIndexError = false
+        refreshIndexDiag()
+    }
+
+    /**
+     * Republishes [indexDiag] from the current facts. Called after
+     * every change to those facts (attach/invalidate, a walk
+     * starting or landing, an index being served or dropped), so
+     * the Settings block never shows a state the provider has
+     * already moved past.
+     */
+    private fun refreshIndexDiag() {
+        _indexDiag.value = LyricsIndexDiag(
+            state = lyricsIndexState(
+                configured = isConfigured,
+                walkInFlight = walkInFlight.get(),
+                lastError = lastIndexError,
+                hasIndex = cachedIndex != null,
+            ),
+            lrcCount = cachedIndex?.lrc?.size,
+        )
     }
 
     /**
@@ -153,12 +205,58 @@ class LocalLyricsProvider(
     /** Lyrics for the playing track, or null when no local file matches it. */
     suspend fun fetch(track: TrackInfo): LyricsDocument? {
         val artists = listOf(track.artist).filter { it.isNotBlank() }
-        return fetch(track.title, artists, track.durationMs)
+        return fetch(track.title, artists, track.durationMs, track.packageName)
     }
 
     /** Lyrics for a track described by title, artists and duration, or null when no local file matches it. */
-    suspend fun fetch(title: String, artists: List<String>, durationMs: Long): LyricsDocument? {
+    suspend fun fetch(title: String, artists: List<String>, durationMs: Long): LyricsDocument? =
+        fetch(title, artists, durationMs, sourcePackage = "")
+
+    /**
+     * The lookup itself, recording a [LookupTrace] on every exit.
+     *
+     * The trace is the v1.0.22 diagnostics instrument: it keeps the
+     * inputs verbatim (never normalized — the whole point is to see
+     * what the player actually sent) and what each step did, so the
+     * Settings block can show which step failed on the device
+     * instead of another empty screenshot. Behaviour is otherwise
+     * exactly the pre-trace lookup: same steps, same order, same
+     * results.
+     */
+    private suspend fun fetch(
+        title: String,
+        artists: List<String>,
+        durationMs: Long,
+        sourcePackage: String,
+    ): LyricsDocument? {
         noMatchReason = null
+        val startedAtMs = System.currentTimeMillis()
+        var audioFileFound = false
+        var sameStemCandidate: String? = null
+        var titleCheckPassed: Boolean? = null
+        var fallbackMatchCount: Int? = null
+        var winnerFile: String? = null
+        var parsedLineCount: Int? = null
+        var readFailedCount = 0
+        var parseEmptyCount = 0
+
+        fun trace(outcome: LookupOutcome, index: LocalIndex?) = LookupTrace(
+            timestampMs = startedAtMs,
+            title = title,
+            artist = artists.joinToString(", "),
+            sourcePackage = sourcePackage,
+            indexLrcCount = index?.lrc?.size,
+            audioFileFound = audioFileFound,
+            sameStemCandidate = sameStemCandidate,
+            titleCheckPassed = titleCheckPassed,
+            fallbackMatchCount = fallbackMatchCount,
+            winnerFile = winnerFile,
+            parsedLineCount = parsedLineCount,
+            readFailedCount = readFailedCount,
+            parseEmptyCount = parseEmptyCount,
+            outcome = outcome,
+        )
+
         val index = ensureIndex()
         if (index == null) {
             noMatchReason = if (!isConfigured) {
@@ -166,6 +264,7 @@ class LocalLyricsProvider(
             } else {
                 "Lyrics folder can't be read — pick it again in Settings"
             }
+            _lastLookup.value = trace(LookupOutcome.ERROR, index = null)
             return null
         }
 
@@ -178,28 +277,53 @@ class LocalLyricsProvider(
         //    title that does not match falls through to the metadata
         //    fallback below (exact keys), which is the stricter check.
         val audioFile = LocalLyricsMatcher.findAudioFile(title, artists, index.audio)
+        audioFileFound = audioFile != null
         if (audioFile != null) {
             val lrcEntry = LocalLyricsMatcher.sameStemLrc(audioFile, index.lrc)
-            if (lrcEntry != null &&
-                LocalLyricsMatcher.lrcTitleMatches(lrcEntry.file.fileName, title)
-            ) {
-                parseFile(lrcEntry.file)?.let { return it }
+            sameStemCandidate = lrcEntry?.file?.fileName
+            if (lrcEntry != null) {
+                titleCheckPassed =
+                    LocalLyricsMatcher.lrcTitleMatches(lrcEntry.file.fileName, title)
+            }
+            if (lrcEntry != null && titleCheckPassed == true) {
+                when (val attempt = parseAttempt(lrcEntry.file)) {
+                    is ParseAttempt.Parsed -> {
+                        winnerFile = lrcEntry.file.fileName
+                        parsedLineCount = attempt.document.lines.size
+                        _lastLookup.value = trace(LookupOutcome.FOUND_SAME_STEM, index)
+                        return attempt.document
+                    }
+                    ParseAttempt.ReadFailed -> readFailedCount++
+                    ParseAttempt.ParseEmpty -> parseEmptyCount++
+                }
             }
         }
 
         // 2. Fallback: metadata matching against `.lrc` file names.
         val matched = LocalLyricsMatcher.match(title, artists, index.lrc)
+        fallbackMatchCount = matched.size
         if (matched.isEmpty()) {
             noMatchReason = "No .lrc file in the folder matches this track"
+            _lastLookup.value = trace(LookupOutcome.NOT_FOUND, index)
             return null
         }
 
         val parsed = mutableListOf<Pair<IndexedLrcFile, LyricsDocument>>()
         for (entry in matched.take(MAX_FILES_TO_PARSE)) {
-            parseFile(entry.file)?.let { parsed += entry to it }
+            when (val attempt = parseAttempt(entry.file)) {
+                is ParseAttempt.Parsed -> parsed += entry to attempt.document
+                ParseAttempt.ReadFailed -> readFailedCount++
+                ParseAttempt.ParseEmpty -> parseEmptyCount++
+            }
         }
         if (parsed.isEmpty()) {
             noMatchReason = "Matched .lrc files could not be read"
+            val outcome = if (readFailedCount > 0 && parseEmptyCount == 0) {
+                LookupOutcome.READ_FAILED
+            } else {
+                LookupOutcome.PARSE_EMPTY
+            }
+            _lastLookup.value = trace(outcome, index)
             return null
         }
 
@@ -210,8 +334,18 @@ class LocalLyricsProvider(
             parsed = parsed.map { (entry, document) ->
                 entry to document.lines.maxOfOrNull { it.timeMs }
             },
-        ) ?: return null
-        return parsed.first { it.first == winner }.second
+        )
+        if (winner == null) {
+            // Unreachable for a non-empty parsed list; recorded as an
+            // error rather than silently untraced if that ever changes.
+            _lastLookup.value = trace(LookupOutcome.ERROR, index)
+            return null
+        }
+        val document = parsed.first { it.first == winner }.second
+        winnerFile = winner.file.fileName
+        parsedLineCount = document.lines.size
+        _lastLookup.value = trace(LookupOutcome.FOUND_METADATA, index)
+        return document
     }
 
     /** The cached folder index: indexed `.lrc` files plus indexed audio files. */
@@ -231,6 +365,7 @@ class LocalLyricsProvider(
             val diskIndex = withContext(ioDispatcher) { loadCachedIndex(uri) }
             if (diskIndex != null) {
                 cachedIndex = diskIndex
+                refreshIndexDiag()
                 triggerBackgroundRebuild()
                 return diskIndex
             }
@@ -247,11 +382,13 @@ class LocalLyricsProvider(
             val index = walkFolder()
             if (index == null) {
                 lastIndexError = true
+                refreshIndexDiag()
                 return@withLock null
             }
             lastIndexError = false
             cachedIndex = index
             _indexVersion.value += 1
+            refreshIndexDiag()
             if (uri != null) {
                 saveCachedIndex(uri, index)
             }
@@ -270,6 +407,17 @@ class LocalLyricsProvider(
      * when this fetch is cancelled.
      */
     private suspend fun walkFolder(): LocalIndex? {
+        walkInFlight.set(true)
+        refreshIndexDiag()
+        try {
+            return walkFolderOnce()
+        } finally {
+            walkInFlight.set(false)
+            refreshIndexDiag()
+        }
+    }
+
+    private suspend fun walkFolderOnce(): LocalIndex? {
         val folderSource = source ?: return null
         val startedAt = System.currentTimeMillis()
         val (lrcFiles, audioFiles) = try {
@@ -390,6 +538,7 @@ class LocalLyricsProvider(
                 if (built != null && folderUri() == rebuildFolderUri) {
                     cachedIndex = built
                     _indexVersion.value += 1
+                    refreshIndexDiag()
                     saveCachedIndex(rebuildFolderUri, built)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -402,9 +551,31 @@ class LocalLyricsProvider(
         }
     }
 
-    private suspend fun parseFile(file: LocalLrcFile): LyricsDocument? {
-        val bytes = withContext(ioDispatcher) { source?.readBytes(file) } ?: return null
-        return LocalLyricsMatcher.parseBytes(bytes, file.fileName)
+    /** What reading + parsing one `.lrc` file came back with. */
+    private sealed interface ParseAttempt {
+        /** The file read and parsed into a document with timed lines. */
+        data class Parsed(val document: LyricsDocument) : ParseAttempt
+
+        /** The file's bytes could not be read at all (open failed / no stream). */
+        data object ReadFailed : ParseAttempt
+
+        /** The file read fine but decoded to zero timed lines. */
+        data object ParseEmpty : ParseAttempt
+    }
+
+    /**
+     * Reads and parses one file, keeping the two failure kinds apart:
+     * the old `parseFile` merged "could not open it" and "opened but
+     * untimed" into one null, and on the device those are different
+     * bugs (a URI/grant problem vs a file-content problem) — the
+     * lookup trace records them separately.
+     */
+    private suspend fun parseAttempt(file: LocalLrcFile): ParseAttempt {
+        val bytes = withContext(ioDispatcher) { source?.readBytes(file) }
+            ?: return ParseAttempt.ReadFailed
+        val document = LocalLyricsMatcher.parseBytes(bytes, file.fileName)
+            ?: return ParseAttempt.ParseEmpty
+        return ParseAttempt.Parsed(document)
     }
 
     companion object {
