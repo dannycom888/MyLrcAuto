@@ -68,6 +68,8 @@
     <string name="settings_lrcdiag_state_ready">就绪</string>
     <string name="settings_lrcdiag_state_unreadable">文件夹读不了</string>
     <string name="settings_lrcdiag_index_count">已索引歌词数</string>
+    <string name="settings_lrcdiag_index_audio_count">已索引音频数</string>
+    <string name="settings_lrcdiag_index_dropped">上次扫描丢弃行数</string>
     <string name="settings_lrcdiag_track">歌曲（播放器原样）</string>
     <string name="settings_lrcdiag_source">来源</string>
     <string name="settings_lrcdiag_audio_found">找到音频文件</string>
@@ -84,6 +86,12 @@
     <string name="settings_lrcdiag_outcome_parse_empty">配上的文件没有时间轴</string>
     <string name="settings_lrcdiag_outcome_read_failed">配上的文件读不出来</string>
     <string name="settings_lrcdiag_outcome_error">查找失败（文件夹 / 索引）</string>
+    <string name="settings_lrcdiag_probe">文件名含原歌名（音频/歌词）</string>
+    <string name="settings_lrcdiag_match_step">命中方式</string>
+    <string name="settings_lrcdiag_step_audio_artist">音频同名配对（含歌手）</string>
+    <string name="settings_lrcdiag_step_audio_title">音频同名配对（只按歌名）</string>
+    <string name="settings_lrcdiag_step_name_artist">按名匹配（歌手+歌名）</string>
+    <string name="settings_lrcdiag_step_name_title">按名匹配（只按歌名）</string>
 
     <string name="car_silent">没有在放歌</string>
     <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>

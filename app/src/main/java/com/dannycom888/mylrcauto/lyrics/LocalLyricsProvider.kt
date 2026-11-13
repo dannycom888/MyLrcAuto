@@ -29,14 +29,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Matching is audio-anchored first: the playing track's own audio file is
  * found in the folder (its stem must contain the title and one of the
- * artists — or the title alone when the player reports no artist), and the
+ * artists — or the title alone when the player reports no artist; since
+ * v1.0.23 a title-only retry runs when no stem carries an artist), and the
  * `.lrc` with the identical stem is used — the pairing rule Poweramp uses.
  * When no audio file is found, or the audio file has no same-stem `.lrc`,
  * matching falls back to the `.lrc` file names:
  * `"Artist - Title.lrc"` is preferred, `"Title.lrc"` is the fallback; both
- * are normalized (case, spacing and punctuation are ignored). When the player
- * reports no artist at all, a file whose title part is this title matches
- * too — there is no artist to contradict it. When several files match, the
+ * are normalized (case, spacing and punctuation are ignored), and when the
+ * name keys match nothing, an exact title-part match is accepted as a last
+ * resort regardless of the file's artist part. When several files match, the
  * one whose last lyric timestamp is closest to the track duration wins.
  * `.lrc` files are decoded as UTF-8 first and as GBK when that fails.
  */
@@ -174,6 +175,8 @@ class LocalLyricsProvider(
                 hasIndex = cachedIndex != null,
             ),
             lrcCount = cachedIndex?.lrc?.size,
+            audioCount = cachedIndex?.audio?.size,
+            droppedCount = cachedIndex?.droppedCount,
         )
     }
 
@@ -239,23 +242,42 @@ class LocalLyricsProvider(
         var parsedLineCount: Int? = null
         var readFailedCount = 0
         var parseEmptyCount = 0
+        var matchStep: LookupMatchStep? = null
 
-        fun trace(outcome: LookupOutcome, index: LocalIndex?) = LookupTrace(
-            timestampMs = startedAtMs,
-            title = title,
-            artist = artists.joinToString(", "),
-            sourcePackage = sourcePackage,
-            indexLrcCount = index?.lrc?.size,
-            audioFileFound = audioFileFound,
-            sameStemCandidate = sameStemCandidate,
-            titleCheckPassed = titleCheckPassed,
-            fallbackMatchCount = fallbackMatchCount,
-            winnerFile = winnerFile,
-            parsedLineCount = parsedLineCount,
-            readFailedCount = readFailedCount,
-            parseEmptyCount = parseEmptyCount,
-            outcome = outcome,
-        )
+        fun trace(outcome: LookupOutcome, index: LocalIndex?): LookupTrace {
+            // The raw probe runs over the served index's RAW file
+            // names with the RAW reported title — the discriminator
+            // between "entries never reached the index" (probe 0/0)
+            // and "entries are there, the match keys miss" (probe
+            // positive, outcome NOT_FOUND). See RawTitleProbe.
+            val probe = index?.let {
+                rawTitleProbe(
+                    rawTitle = title,
+                    lrcFileNames = it.lrc.map { entry -> entry.file.fileName },
+                    audioFileNames = it.audio.map { entry -> entry.file.fileName },
+                )
+            }
+            return LookupTrace(
+                timestampMs = startedAtMs,
+                title = title,
+                artist = artists.joinToString(", "),
+                sourcePackage = sourcePackage,
+                indexLrcCount = index?.lrc?.size,
+                audioFileFound = audioFileFound,
+                sameStemCandidate = sameStemCandidate,
+                titleCheckPassed = titleCheckPassed,
+                fallbackMatchCount = fallbackMatchCount,
+                winnerFile = winnerFile,
+                parsedLineCount = parsedLineCount,
+                readFailedCount = readFailedCount,
+                parseEmptyCount = parseEmptyCount,
+                outcome = outcome,
+                indexAudioCount = index?.audio?.size,
+                rawProbeLrcCount = probe?.lrcCount,
+                rawProbeAudioCount = probe?.audioCount,
+                matchStep = matchStep,
+            )
+        }
 
         val index = ensureIndex()
         if (index == null) {
@@ -276,7 +298,8 @@ class LocalLyricsProvider(
         //    its same-stem `.lrc` would show the wrong song's lyrics. A
         //    title that does not match falls through to the metadata
         //    fallback below (exact keys), which is the stricter check.
-        val audioFile = LocalLyricsMatcher.findAudioFile(title, artists, index.audio)
+        val audioMatch = LocalLyricsMatcher.findAudioFileDetailed(title, artists, index.audio)
+        val audioFile = audioMatch?.entry
         audioFileFound = audioFile != null
         if (audioFile != null) {
             val lrcEntry = LocalLyricsMatcher.sameStemLrc(audioFile, index.lrc)
@@ -290,6 +313,11 @@ class LocalLyricsProvider(
                     is ParseAttempt.Parsed -> {
                         winnerFile = lrcEntry.file.fileName
                         parsedLineCount = attempt.document.lines.size
+                        matchStep = if (audioMatch?.titleOnlyRetry == true) {
+                            LookupMatchStep.AUDIO_TITLE_ONLY
+                        } else {
+                            LookupMatchStep.AUDIO_WITH_ARTIST
+                        }
                         _lastLookup.value = trace(LookupOutcome.FOUND_SAME_STEM, index)
                         return attempt.document
                     }
@@ -300,7 +328,8 @@ class LocalLyricsProvider(
         }
 
         // 2. Fallback: metadata matching against `.lrc` file names.
-        val matched = LocalLyricsMatcher.match(title, artists, index.lrc)
+        val nameMatch = LocalLyricsMatcher.matchDetailed(title, artists, index.lrc)
+        val matched = nameMatch.files
         fallbackMatchCount = matched.size
         if (matched.isEmpty()) {
             noMatchReason = "No .lrc file in the folder matches this track"
@@ -344,14 +373,26 @@ class LocalLyricsProvider(
         val document = parsed.first { it.first == winner }.second
         winnerFile = winner.file.fileName
         parsedLineCount = document.lines.size
+        matchStep = if (nameMatch.titleOnlyFallback) {
+            LookupMatchStep.NAME_TITLE_ONLY
+        } else {
+            LookupMatchStep.NAME_WITH_ARTIST
+        }
         _lastLookup.value = trace(LookupOutcome.FOUND_METADATA, index)
         return document
     }
 
-    /** The cached folder index: indexed `.lrc` files plus indexed audio files. */
+    /**
+     * The cached folder index: indexed `.lrc` files plus indexed audio files.
+     *
+     * [droppedCount] is the producing walk's unclassifiable-row count;
+     * null when the index was loaded from the disk cache (that walk is
+     * not this process's to report).
+     */
     private data class LocalIndex(
         val lrc: List<IndexedLrcFile>,
         val audio: List<IndexedAudioFile>,
+        val droppedCount: Int? = null,
     )
 
     private suspend fun ensureIndex(): LocalIndex? {
@@ -420,7 +461,7 @@ class LocalLyricsProvider(
     private suspend fun walkFolderOnce(): LocalIndex? {
         val folderSource = source ?: return null
         val startedAt = System.currentTimeMillis()
-        val (lrcFiles, audioFiles) = try {
+        val walk = try {
             withContext(NonCancellable + ioDispatcher) {
                 folderSource.listAll()
             }
@@ -431,26 +472,27 @@ class LocalLyricsProvider(
             return null
         }
         val tookMs = System.currentTimeMillis() - startedAt
-        if (tookMs > SLOW_WALK_MS) {
+        if (tookMs > SLOW_WALK_MS || walk.droppedCount > 0) {
             Log.i(
                 TAG,
-                "Lyrics index walk took ${tookMs}ms: ${lrcFiles.size} .lrc, " +
-                    "${audioFiles.size} audio",
+                "Lyrics index walk took ${tookMs}ms: ${walk.lrcFiles.size} .lrc, " +
+                    "${walk.audioFiles.size} audio, ${walk.droppedCount} dropped",
             )
         }
         return LocalIndex(
-            lrc = lrcFiles.map { file ->
+            lrc = walk.lrcFiles.map { file ->
                 IndexedLrcFile(
                     file = file,
                     keys = LocalLyricsMatcher.fileKeys(file.fileName),
                 )
             },
-            audio = audioFiles.map { file ->
+            audio = walk.audioFiles.map { file ->
                 IndexedAudioFile(
                     file = file,
                     normalizedStem = LocalLyricsMatcher.fileStem(file.fileName),
                 )
             },
+            droppedCount = walk.droppedCount,
         )
     }
 

@@ -3,8 +3,10 @@ package com.dannycom888.mylrcauto
 import android.content.ContextWrapper
 import com.dannycom888.mylrcauto.lyrics.LocalAudioFile
 import com.dannycom888.mylrcauto.lyrics.LocalLrcFile
+import com.dannycom888.mylrcauto.lyrics.FolderWalk
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsSource
+import com.dannycom888.mylrcauto.lyrics.LookupMatchStep
 import com.dannycom888.mylrcauto.lyrics.LookupOutcome
 import com.dannycom888.mylrcauto.lyrics.LyricsIndexState
 import com.dannycom888.mylrcauto.media.TrackInfo
@@ -36,12 +38,13 @@ class LyricsLookupTraceTest {
         var audioFiles: List<LocalAudioFile>,
         var bytesByName: Map<String, ByteArray>,
         var failWalk: Boolean = false,
+        var droppedCount: Int = 0,
     ) : LocalLyricsSource {
         override fun isConfigured(): Boolean = true
 
-        override suspend fun listAll(): Pair<List<LocalLrcFile>, List<LocalAudioFile>> {
+        override suspend fun listAll(): FolderWalk {
             if (failWalk) throw IllegalStateException("folder gone")
-            return lrcFiles to audioFiles
+            return FolderWalk(lrcFiles, audioFiles, droppedCount)
         }
 
         override suspend fun readBytes(file: LocalLrcFile): ByteArray? =
@@ -107,11 +110,19 @@ class LyricsLookupTraceTest {
         assertEquals(0, trace.readFailedCount)
         assertEquals(0, trace.parseEmptyCount)
         assertEquals(LookupOutcome.FOUND_SAME_STEM, trace.outcome)
+        // v1.0.23: the index's audio side, the raw probe and the
+        // producing step are recorded too.
+        assertEquals(1, trace.indexAudioCount)
+        assertEquals(1, trace.rawProbeLrcCount)
+        assertEquals(1, trace.rawProbeAudioCount)
+        assertEquals(LookupMatchStep.AUDIO_WITH_ARTIST, trace.matchStep)
 
         // The index half of the block: ready, with the served count.
         val diag = provider.indexDiag.value
         assertEquals(LyricsIndexState.READY, diag.state)
         assertEquals(2, diag.lrcCount)
+        assertEquals(1, diag.audioCount)
+        assertEquals(0, diag.droppedCount)
     }
 
     @Test
@@ -131,6 +142,12 @@ class LyricsLookupTraceTest {
         assertNull(trace.winnerFile)
         assertNull(trace.parsedLineCount)
         assertEquals(LookupOutcome.NOT_FOUND, trace.outcome)
+        // Nothing in the index carries the title at all: the probe
+        // is 0/0 — the "entries absent" signature.
+        assertEquals(1, trace.indexAudioCount)
+        assertEquals(0, trace.rawProbeLrcCount)
+        assertEquals(0, trace.rawProbeAudioCount)
+        assertNull(trace.matchStep)
     }
 
     @Test
@@ -163,6 +180,14 @@ class LyricsLookupTraceTest {
         assertEquals(false, trace.titleCheckPassed)
         assertEquals(0, trace.fallbackMatchCount)
         assertEquals(LookupOutcome.NOT_FOUND, trace.outcome)
+        // The discriminator the v1.0.22 trace could not provide:
+        // the probe is POSITIVE (the entries ARE in the index)
+        // while the outcome is NOT_FOUND — so this miss is the
+        // matcher's doing, not the walk's. (The device traces are
+        // the opposite shape; see deviceTraceShapesAreReproducible.)
+        assertEquals(1, trace.rawProbeLrcCount)
+        assertEquals(1, trace.rawProbeAudioCount)
+        assertNull(trace.matchStep)
     }
 
     @Test
@@ -229,9 +254,14 @@ class LyricsLookupTraceTest {
 
         val trace = provider.lastLookup.value!!
         assertNull(trace.indexLrcCount)
+        assertNull(trace.indexAudioCount)
+        assertNull(trace.rawProbeLrcCount)
+        assertNull(trace.rawProbeAudioCount)
         assertEquals(LookupOutcome.ERROR, trace.outcome)
         assertEquals(LyricsIndexState.UNREADABLE, provider.indexDiag.value.state)
         assertNull(provider.indexDiag.value.lrcCount)
+        assertNull(provider.indexDiag.value.audioCount)
+        assertNull(provider.indexDiag.value.droppedCount)
     }
 
     @Test
@@ -264,5 +294,144 @@ class LyricsLookupTraceTest {
         assertEquals("Beyond - 不再犹豫.lrc", trace.winnerFile)
         assertEquals(50, trace.parsedLineCount)
         assertEquals(LookupOutcome.FOUND_METADATA, trace.outcome)
+        assertEquals(LookupMatchStep.NAME_WITH_ARTIST, trace.matchStep)
+    }
+
+    @Test
+    fun deviceTraceShapesAreReproducible() {
+        // The two v1.0.22 device traces (2026-11-12 23:24 / 23:25):
+        // clean inputs — title "不再犹豫" / artist "Beyond" and
+        // title "九百九十九朵玫瑰" / artist "邰正宵", both from
+        // Poweramp — against an index that reported ready, yet
+        // audio found NO, fallback 0, NO_MATCH, for files PROVEN
+        // present in the picked tree. The fake source here serves
+        // an index WITHOUT the entries — the degraded-walk shape —
+        // and the v1.0.23 probe is what names it: 0/0, entries
+        // absent. (The same inputs against an index WITH the
+        // entries resolve — see sameStemHitRecordsInputsAndSteps
+        // and titleOnlyAudioFileHitsViaTheRetry.)
+        val source = FakeSource(
+            lrcFiles = listOf(
+                LocalLrcFile("content://test/boy/Beyond - 喜欢你.lrc", "Beyond - 喜欢你.lrc"),
+            ),
+            audioFiles = listOf(
+                LocalAudioFile("content://test/boy/Beyond - 喜欢你.mp3", "Beyond - 喜欢你.mp3"),
+            ),
+            bytesByName = emptyMap(),
+        )
+        val provider = providerFor(source)
+
+        val byBeyond = runBlocking {
+            provider.fetch(
+                TrackInfo(
+                    title = "不再犹豫",
+                    artist = "Beyond",
+                    album = "",
+                    durationMs = 231_000L,
+                    packageName = "com.maxmpz.audioplayer",
+                ),
+            )
+        }
+        assertNull(byBeyond)
+        val beyondTrace = provider.lastLookup.value!!
+        assertEquals(false, beyondTrace.audioFileFound)
+        assertEquals(0, beyondTrace.fallbackMatchCount)
+        assertEquals(LookupOutcome.NOT_FOUND, beyondTrace.outcome)
+        assertEquals(0, beyondTrace.rawProbeLrcCount)
+        assertEquals(0, beyondTrace.rawProbeAudioCount)
+        assertNull(beyondTrace.matchStep)
+
+        val byTai = runBlocking {
+            provider.fetch("九百九十九朵玫瑰", listOf("邰正宵"), 0L)
+        }
+        assertNull(byTai)
+        val taiTrace = provider.lastLookup.value!!
+        assertEquals(false, taiTrace.audioFileFound)
+        assertEquals(0, taiTrace.fallbackMatchCount)
+        assertEquals(LookupOutcome.NOT_FOUND, taiTrace.outcome)
+        assertEquals(0, taiTrace.rawProbeLrcCount)
+        assertEquals(0, taiTrace.rawProbeAudioCount)
+    }
+
+    @Test
+    fun titleOnlyAudioFileHitsViaTheRetry() {
+        // The 九百九十九朵玫瑰 files exist but carry NO artist in
+        // their names: the artist pass cannot find the audio file,
+        // the v1.0.23 title-only retry can, and the trace names the
+        // step that did it.
+        val timed = "[00:01.00]九百九十九朵玫瑰".toByteArray(Charsets.UTF_8)
+        val source = FakeSource(
+            lrcFiles = listOf(
+                LocalLrcFile("content://test/girl/九百九十九朵玫瑰.lrc", "九百九十九朵玫瑰.lrc"),
+            ),
+            audioFiles = listOf(
+                LocalAudioFile("content://test/girl/九百九十九朵玫瑰.mp3", "九百九十九朵玫瑰.mp3"),
+            ),
+            bytesByName = mapOf("九百九十九朵玫瑰.lrc" to timed),
+        )
+        val provider = providerFor(source)
+
+        val document = runBlocking {
+            provider.fetch("九百九十九朵玫瑰", listOf("邰正宵"), 0L)
+        }
+        assertNotNull(document)
+
+        val trace = provider.lastLookup.value!!
+        assertEquals(true, trace.audioFileFound)
+        assertEquals("九百九十九朵玫瑰.lrc", trace.sameStemCandidate)
+        assertEquals(true, trace.titleCheckPassed)
+        assertNull(trace.fallbackMatchCount)
+        assertEquals(LookupOutcome.FOUND_SAME_STEM, trace.outcome)
+        assertEquals(LookupMatchStep.AUDIO_TITLE_ONLY, trace.matchStep)
+        assertEquals(1, trace.rawProbeLrcCount)
+        assertEquals(1, trace.rawProbeAudioCount)
+    }
+
+    @Test
+    fun trackNumberPrefixedLrcHitsViaTitleOnlyNameStep() {
+        // No audio file, and the .lrc's name is poisoned for the
+        // key ranking by its track-number prefix: only the
+        // title-only phase of the name fallback reaches it.
+        val timed = "[00:01.00]九百九十九朵玫瑰".toByteArray(Charsets.UTF_8)
+        val name = "01. 邰正宵 - 九百九十九朵玫瑰.lrc"
+        val source = FakeSource(
+            lrcFiles = listOf(LocalLrcFile("content://test/girl/$name", name)),
+            audioFiles = emptyList(),
+            bytesByName = mapOf(name to timed),
+        )
+        val provider = providerFor(source)
+
+        val document = runBlocking {
+            provider.fetch("九百九十九朵玫瑰", listOf("邰正宵"), 0L)
+        }
+        assertNotNull(document)
+
+        val trace = provider.lastLookup.value!!
+        assertEquals(false, trace.audioFileFound)
+        assertEquals(1, trace.fallbackMatchCount)
+        assertEquals(name, trace.winnerFile)
+        assertEquals(LookupOutcome.FOUND_METADATA, trace.outcome)
+        assertEquals(LookupMatchStep.NAME_TITLE_ONLY, trace.matchStep)
+        assertEquals(0, trace.indexAudioCount)
+        assertEquals(1, trace.rawProbeLrcCount)
+        assertEquals(0, trace.rawProbeAudioCount)
+    }
+
+    @Test
+    fun indexDiagReportsTheWalksDroppedCount() {
+        // The dropped-row count from the walk that built the served
+        // index lands in the diagnostics block — on the device this
+        // is the number that proves (or clears) the silent-drop
+        // mechanism.
+        val source = beyondSource().apply { droppedCount = 3 }
+        val provider = providerFor(source)
+
+        runBlocking { provider.fetch("不再犹豫", listOf("Beyond"), 231_000L) }
+
+        val diag = provider.indexDiag.value
+        assertEquals(LyricsIndexState.READY, diag.state)
+        assertEquals(2, diag.lrcCount)
+        assertEquals(1, diag.audioCount)
+        assertEquals(3, diag.droppedCount)
     }
 }

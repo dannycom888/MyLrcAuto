@@ -27,11 +27,12 @@ import java.nio.charset.CodingErrorAction
  * `"庄心妍_祁隆"` matches `"庄心妍 - 一万个舍不得.lrc"`. The artist part is
  * split on `_`, `、`, `&`, `,`, `+`, `/`, `feat.`/`ft.`, and the Chinese
  * `与`/`和`; the title part must still equal the track title after
- * normalization. A file only reaches the bare-title tier when it has no
- * artist part at all — a file whose artist part names someone else does not
- * match on title alone — except when the track reports no artist at all:
- * then there is no artist to contradict, and a file whose title part is
- * this title matches too.
+ * normalization. The key tiers stay strictly ordered — a file that names
+ * the track's artist always wins — but since v1.0.23 the title-part tier
+ * is a fallback for ANY empty key ranking, not only for artist-less
+ * tracks: an exact title-part match (never a substring) is accepted when
+ * nothing matched on the keys, so one wrong artist token from the player
+ * cannot zero the whole lookup.
  *
  * This object is pure Kotlin with no Android dependency so the rules are
  * directly unit-testable on the JVM.
@@ -220,6 +221,16 @@ object LocalLyricsMatcher {
     }
 
     /**
+     * A [findAudioFileDetailed] result: the file that was picked and
+     * whether it came from the title-only retry (see there).
+     */
+    data class AudioFileMatch(
+        val entry: IndexedAudioFile,
+        /** True when the title+artist pass found nothing and the title-only retry picked this file. */
+        val titleOnlyRetry: Boolean,
+    )
+
+    /**
      * Finds the audio file that is playing: its normalized stem must contain
      * the normalized track title and at least one normalized artist segment
      * (an individual artist from a multi-artist credit). When the track
@@ -233,7 +244,28 @@ object LocalLyricsMatcher {
         title: String,
         artists: List<String>,
         audioFiles: List<IndexedAudioFile>,
-    ): IndexedAudioFile? {
+    ): IndexedAudioFile? = findAudioFileDetailed(title, artists, audioFiles)?.entry
+
+    /**
+     * [findAudioFile] with the pass that produced the hit recorded, for
+     * the lookup trace.
+     *
+     * v1.0.23 relaxation: when the track reports artists but NO stem
+     * contains one of them alongside the title, the search retries on
+     * the title alone (residue-ranked the same way). The artist pass
+     * stays strictly first, so a file that names the artist always
+     * beats a title-only file; the retry only fires when the artist
+     * pass came back empty — the shape the 2026-11-12 device traces
+     * showed (audio found: NO for files whose stems carry the title).
+     * The pick stays safe for the step that consumes it: the same-stem
+     * `.lrc` still has to pass the exact title check
+     * ([lrcTitleMatches]) before anything is shown.
+     */
+    fun findAudioFileDetailed(
+        title: String,
+        artists: List<String>,
+        audioFiles: List<IndexedAudioFile>,
+    ): AudioFileMatch? {
         val normalizedTitle = normalize(title)
         if (normalizedTitle.isEmpty()) return null
         val artistSegments = artists
@@ -241,11 +273,39 @@ object LocalLyricsMatcher {
             .map { normalize(it) }
             .filter { it.isNotEmpty() }
             .toSet()
+        val primary = bestAudioMatch(
+            normalizedTitle = normalizedTitle,
+            artistSegments = artistSegments,
+            audioFiles = audioFiles,
+            requireArtist = artistSegments.isNotEmpty(),
+        )
+        if (primary != null) return AudioFileMatch(primary, titleOnlyRetry = false)
+        if (artistSegments.isEmpty()) return null
+        val retry = bestAudioMatch(
+            normalizedTitle = normalizedTitle,
+            artistSegments = artistSegments,
+            audioFiles = audioFiles,
+            requireArtist = false,
+        )
+        return retry?.let { AudioFileMatch(it, titleOnlyRetry = true) }
+    }
+
+    /**
+     * The residue-ranked containment search behind [findAudioFile]:
+     * stems containing the title (and, when [requireArtist], one of
+     * the artist segments), least extra text first.
+     */
+    private fun bestAudioMatch(
+        normalizedTitle: String,
+        artistSegments: Set<String>,
+        audioFiles: List<IndexedAudioFile>,
+        requireArtist: Boolean,
+    ): IndexedAudioFile? {
         return audioFiles
             .mapNotNull { entry ->
                 val stem = entry.normalizedStem
                 if (!stem.contains(normalizedTitle)) return@mapNotNull null
-                val segment = if (artistSegments.isEmpty()) "" else
+                val segment = if (!requireArtist) "" else
                     artistSegments.firstOrNull { stem.contains(it) }
                         ?: return@mapNotNull null
                 val residue = (stem.length - normalizedTitle.length - segment.length).coerceAtLeast(0)
@@ -288,35 +348,69 @@ object LocalLyricsMatcher {
     }
 
     /**
+     * A [matchDetailed] result: the matched files, and whether they
+     * came from the title-only fallback phase rather than the key
+     * ranking.
+     */
+    data class NameMatchResult(
+        val files: List<IndexedLrcFile>,
+        /** True when the key ranking matched nothing and the title-only phase produced these files. */
+        val titleOnlyFallback: Boolean,
+    )
+
+    /**
      * Returns the indexed files that match the track, ordered by preference:
      * files matching an earlier track key come first; files matching the same
      * key keep their index order.
      *
-     * When the track reports no artist at all and nothing matched on the
-     * keys, files whose title part is this title match too — a file named
-     * `"Artist - Title.lrc"` is no longer held to an artist nobody reported.
-     * A known artist still rules those files out: with an artist to check
-     * against, only its files match.
+     * When the key ranking matches nothing, a title-only phase runs:
+     * files whose TITLE PART is exactly the track title (normalized,
+     * bracketed suffixes stripped — exact equality, never a substring,
+     * so "爱" still does not match "爱你.lrc"). Until v1.0.23 that
+     * phase only ran when the track reported no artist at all, which
+     * made the fallback all-or-nothing on the artist string: one
+     * wrong or extra artist token from the player zeroed it even when
+     * an exact-title file was indexed. It now runs whenever the key
+     * ranking is empty — the ranking stays strictly first, so a file
+     * that names the track's artist always beats a title-only file.
      */
     fun match(
         title: String,
         artists: List<String>,
         indexed: List<IndexedLrcFile>,
-    ): List<IndexedLrcFile> {
+    ): List<IndexedLrcFile> = matchDetailed(title, artists, indexed).files
+
+    /** [match] with the producing phase recorded, for the lookup trace. */
+    fun matchDetailed(
+        title: String,
+        artists: List<String>,
+        indexed: List<IndexedLrcFile>,
+    ): NameMatchResult {
         val keys = trackKeys(title, artists)
         val ranked = indexed.mapNotNull { entry ->
             val bestKeyRank = keys.indexOfFirst { key -> key in entry.keys }
             if (bestKeyRank < 0) null else bestKeyRank to entry
         }.sortedBy { it.first }.map { it.second }
-        if (ranked.isNotEmpty() || artists.any { it.isNotBlank() }) return ranked
+        if (ranked.isNotEmpty()) return NameMatchResult(ranked, titleOnlyFallback = false)
         val normalizedTitle = normalize(title)
-        if (normalizedTitle.isEmpty()) return emptyList()
-        return indexed.filter { entry ->
-            val stem = entry.file.fileName.removeSuffix(".lrc").removeSuffix(".LRC")
-            val (_, titlePart) = splitArtistTitle(stem) ?: return@filter false
-            normalize(titlePart) == normalizedTitle ||
-                normalize(stripBracketed(titlePart)) == normalizedTitle
-        }
+        if (normalizedTitle.isEmpty()) return NameMatchResult(emptyList(), titleOnlyFallback = false)
+        val byTitlePart = indexed.filter { entry -> titlePartMatches(entry, normalizedTitle) }
+        return NameMatchResult(byTitlePart, titleOnlyFallback = byTitlePart.isNotEmpty())
+    }
+
+    /**
+     * True when the file's title part is exactly [normalizedTitle]
+     * (the caller passes the already-normalized track title), with
+     * bracketed version suffixes stripped — the exact-equality check
+     * behind the title-only phase of [match]. A file with no
+     * artist/title separator never qualifies here: its whole stem is
+     * its title, and the key ranking already tried that.
+     */
+    private fun titlePartMatches(entry: IndexedLrcFile, normalizedTitle: String): Boolean {
+        val stem = entry.file.fileName.removeSuffix(".lrc").removeSuffix(".LRC")
+        val (_, titlePart) = splitArtistTitle(stem) ?: return false
+        return normalize(titlePart) == normalizedTitle ||
+            normalize(stripBracketed(titlePart)) == normalizedTitle
     }
 
     /**

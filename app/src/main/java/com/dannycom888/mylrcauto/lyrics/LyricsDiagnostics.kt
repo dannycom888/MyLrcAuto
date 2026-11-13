@@ -64,12 +64,79 @@ fun lyricsIndexState(
     else -> LyricsIndexState.BUILDING
 }
 
-/** The index half of the diagnostics block: state plus the served `.lrc` count. */
+/**
+ * The index half of the diagnostics block: state plus the served
+ * counts. The `.lrc` count alone could not explain the 2026-11-12
+ * traces (index "ready", 1,092 .lrc — yet the audio-anchored step
+ * found no audio file), so v1.0.23 also shows how many AUDIO files
+ * the index holds and how many listing rows the last scan dropped
+ * as unclassifiable (see [FolderWalk]): together they separate
+ * "the entries never reached the index" from "the entries are
+ * there but the keys miss".
+ */
 data class LyricsIndexDiag(
     val state: LyricsIndexState,
     /** `.lrc` files in the served index; null when no index is being served. */
     val lrcCount: Int?,
+    /** Audio files in the served index; null when no index is being served. */
+    val audioCount: Int? = null,
+    /**
+     * Rows the last folder walk could not classify and did not
+     * index; null when the served index came from the disk cache
+     * (the walk that built it is not this process's to report) or
+     * no walk has run.
+     */
+    val droppedCount: Int? = null,
 )
+
+/**
+ * Which step of the lookup produced the returned document — in
+ * particular WHICH relaxation, when a relaxation did it (v1.0.23).
+ * A miss has no producing step (null in the trace).
+ */
+enum class LookupMatchStep {
+    /** Step 1: audio file found with title+artist, same-stem `.lrc` used. */
+    AUDIO_WITH_ARTIST,
+
+    /** Step 1: audio file found by the title-only retry, same-stem `.lrc` used. */
+    AUDIO_TITLE_ONLY,
+
+    /** Step 2: the key ranking (artist + title keys) matched. */
+    NAME_WITH_ARTIST,
+
+    /** Step 2: the key ranking matched nothing; the title-only phase matched. */
+    NAME_TITLE_ONLY,
+}
+
+/**
+ * How many indexed file names contain the track title VERBATIM —
+ * the raw probe (v1.0.23). No normalization, no key logic: the raw
+ * reported title as a plain substring of the raw indexed file name,
+ * counted separately for the `.lrc` list and the audio list.
+ *
+ * This is the discriminator the normalized diagnostics could not
+ * provide: probe 0/0 against a "ready" index means the entries
+ * never reached the served index (walk/cache), while a positive
+ * probe with a NOT_FOUND outcome means the entries ARE there and
+ * the match keys are what miss.
+ */
+data class RawTitleProbe(
+    val lrcCount: Int,
+    val audioCount: Int,
+)
+
+/** Computes [RawTitleProbe] for one lookup. An empty title probes as 0/0. */
+fun rawTitleProbe(
+    rawTitle: String,
+    lrcFileNames: List<String>,
+    audioFileNames: List<String>,
+): RawTitleProbe {
+    if (rawTitle.isEmpty()) return RawTitleProbe(lrcCount = 0, audioCount = 0)
+    return RawTitleProbe(
+        lrcCount = lrcFileNames.count { it.contains(rawTitle) },
+        audioCount = audioFileNames.count { it.contains(rawTitle) },
+    )
+}
 
 /** How one lookup ended. */
 enum class LookupOutcome {
@@ -128,6 +195,14 @@ data class LookupTrace(
     /** Matched files (either step) that read fine but held zero timed lines. */
     val parseEmptyCount: Int,
     val outcome: LookupOutcome,
+    /** Audio files in the index this lookup ran against; null when there was no index. */
+    val indexAudioCount: Int? = null,
+    /** Raw probe, `.lrc` side: indexed `.lrc` names containing the raw title; null when no index. */
+    val rawProbeLrcCount: Int? = null,
+    /** Raw probe, audio side: indexed audio names containing the raw title; null when no index. */
+    val rawProbeAudioCount: Int? = null,
+    /** The step that produced the returned document; null when nothing was returned. */
+    val matchStep: LookupMatchStep? = null,
 )
 
 /** `yyyy-MM-dd HH:mm:ss` in the device's locale/timezone — what the user reads in a screenshot. */
@@ -144,6 +219,8 @@ data class LyricsDiagRow(
 enum class LyricsDiagLabel {
     INDEX_STATE,
     INDEX_COUNT,
+    INDEX_AUDIO_COUNT,
+    INDEX_DROPPED,
     LOOKUP_TIME,
     TRACK,
     SOURCE,
@@ -151,7 +228,9 @@ enum class LyricsDiagLabel {
     SAME_STEM,
     TITLE_CHECK,
     FALLBACK_MATCHES,
+    RAW_PROBE,
     WINNER_FILE,
+    MATCH_STEP,
     PARSED_LINES,
     READ_ISSUES,
     OUTCOME,
@@ -163,12 +242,13 @@ sealed interface DiagValue {
     data class YesNo(val value: Boolean) : DiagValue
     data class IndexState(val state: LyricsIndexState) : DiagValue
     data class Outcome(val outcome: LookupOutcome) : DiagValue
+    data class MatchStep(val step: LookupMatchStep) : DiagValue
 }
 
 private const val NO_VALUE = "—"
 
 /**
- * The block's rows, in display order. The two index rows always
+ * The block's rows, in display order. The four index rows always
  * appear; the lookup rows appear once a lookup has been recorded.
  * Pure: all localization happens in the composable via
  * [LyricsDiagLabel] / [DiagValue].
@@ -182,6 +262,14 @@ fun lyricsDiagRows(index: LyricsIndexDiag, lookup: LookupTrace?): List<LyricsDia
         LyricsDiagRow(
             LyricsDiagLabel.INDEX_COUNT,
             DiagValue.Text(index.lrcCount?.toString() ?: NO_VALUE),
+        ),
+        LyricsDiagRow(
+            LyricsDiagLabel.INDEX_AUDIO_COUNT,
+            DiagValue.Text(index.audioCount?.toString() ?: NO_VALUE),
+        ),
+        LyricsDiagRow(
+            LyricsDiagLabel.INDEX_DROPPED,
+            DiagValue.Text(index.droppedCount?.toString() ?: NO_VALUE),
         ),
     )
     if (lookup == null) return rows
@@ -219,8 +307,22 @@ fun lyricsDiagRows(index: LyricsIndexDiag, lookup: LookupTrace?): List<LyricsDia
         DiagValue.Text(lookup.fallbackMatchCount?.toString() ?: NO_VALUE),
     )
     rows += LyricsDiagRow(
+        LyricsDiagLabel.RAW_PROBE,
+        DiagValue.Text(
+            if (lookup.rawProbeAudioCount == null && lookup.rawProbeLrcCount == null) {
+                NO_VALUE
+            } else {
+                "${lookup.rawProbeAudioCount ?: NO_VALUE}/${lookup.rawProbeLrcCount ?: NO_VALUE}"
+            },
+        ),
+    )
+    rows += LyricsDiagRow(
         LyricsDiagLabel.WINNER_FILE,
         DiagValue.Text(lookup.winnerFile ?: NO_VALUE),
+    )
+    rows += LyricsDiagRow(
+        LyricsDiagLabel.MATCH_STEP,
+        lookup.matchStep?.let { DiagValue.MatchStep(it) } ?: DiagValue.Text(NO_VALUE),
     )
     rows += LyricsDiagRow(
         LyricsDiagLabel.PARSED_LINES,

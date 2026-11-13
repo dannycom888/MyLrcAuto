@@ -76,7 +76,7 @@ class LocalLyricsMatcherTest {
     }
 
     @Test
-    fun findAudioFileRequiresTitleAndArtist() {
+    fun findAudioFilePrefersArtistThenRetriesTitleOnly() {
         val files = indexedAudio(
             "庄心妍_祁隆 - 一万个舍不得.mp3",
             "一万个舍不得.mp3",
@@ -86,19 +86,47 @@ class LocalLyricsMatcherTest {
         )
         assertEquals("庄心妍_祁隆 - 一万个舍不得.mp3", found?.file?.fileName)
 
-        // Title-only file does not qualify when an artist was reported.
-        val titleOnly = LocalLyricsMatcher.findAudioFile(
+        // The artist pass wins when it can: no retry is recorded.
+        val detailed = LocalLyricsMatcher.findAudioFileDetailed(
+            "一万个舍不得", listOf("庄心妍"), files,
+        )
+        assertEquals("庄心妍_祁隆 - 一万个舍不得.mp3", detailed?.entry?.file?.fileName)
+        assertEquals(false, detailed?.titleOnlyRetry)
+
+        // v1.0.23: a title-only file DOES qualify when the artist
+        // pass finds nothing — the retry is what the trace records
+        // (before, this lookup returned null and the song showed no
+        // lyrics even though its file was indexed).
+        val titleOnly = LocalLyricsMatcher.findAudioFileDetailed(
             "一万个舍不得", listOf("庄心妍"),
             indexedAudio("一万个舍不得.mp3"),
         )
-        assertNull(titleOnly)
+        assertEquals("一万个舍不得.mp3", titleOnly?.entry?.file?.fileName)
+        assertEquals(true, titleOnly?.titleOnlyRetry)
 
-        // No artist reported: title alone is enough.
-        val noArtist = LocalLyricsMatcher.findAudioFile(
+        // No artist reported: title alone is enough, and that is the
+        // primary pass, not a retry.
+        val noArtist = LocalLyricsMatcher.findAudioFileDetailed(
             "一万个舍不得", emptyList(),
             indexedAudio("一万个舍不得.mp3"),
         )
-        assertEquals("一万个舍不得.mp3", noArtist?.file?.fileName)
+        assertEquals("一万个舍不得.mp3", noArtist?.entry?.file?.fileName)
+        assertEquals(false, noArtist?.titleOnlyRetry)
+    }
+
+    @Test
+    fun findAudioFileRetryKeepsResidueRanking() {
+        // Both files carry the title and neither carries the artist:
+        // the retry still prefers the least extra text.
+        val detailed = LocalLyricsMatcher.findAudioFileDetailed(
+            "九百九十九朵玫瑰", listOf("邰正宵"),
+            indexedAudio(
+                "01. 九百九十九朵玫瑰 (Live).mp3",
+                "九百九十九朵玫瑰.mp3",
+            ),
+        )
+        assertEquals("九百九十九朵玫瑰.mp3", detailed?.entry?.file?.fileName)
+        assertEquals(true, detailed?.titleOnlyRetry)
     }
 
     @Test
@@ -127,12 +155,86 @@ class LocalLyricsMatcherTest {
     }
 
     @Test
-    fun matchRejectsWrongArtist() {
-        val ranked = LocalLyricsMatcher.match(
+    fun matchFallsBackToTitlePartForAnotherArtistsFile() {
+        // v1.0.23: the key ranking still rejects the wrong artist —
+        // but the lookup no longer ends there. The title-only phase
+        // accepts the file on its exact title part (the pre-v1.0.23
+        // behaviour returned nothing here, which is one of the
+        // shapes behind the 2026-11-12 NO_MATCH traces).
+        val result = LocalLyricsMatcher.matchDetailed(
             "晴天", listOf("周杰伦"),
             indexedLrc("林俊杰 - 晴天.lrc"),
         )
-        assertTrue(ranked.isEmpty())
+        assertEquals(
+            listOf("林俊杰 - 晴天.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.titleOnlyFallback)
+    }
+
+    @Test
+    fun matchTitleOnlyPhaseKeepsExactTitleEquality() {
+        // The 爱/爱你 anti-substring protection survives the
+        // fallback: the title part must EQUAL the track title after
+        // normalization — a longer title that merely starts with it
+        // never matches, with or without an artist part on the file.
+        assertTrue(
+            LocalLyricsMatcher.match(
+                "爱", listOf("周杰伦"),
+                indexedLrc("周杰伦 - 爱你.lrc"),
+            ).isEmpty(),
+        )
+        assertTrue(
+            LocalLyricsMatcher.match(
+                "爱", listOf("周杰伦"),
+                indexedLrc("爱你.lrc"),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun matchAcceptsBareDashArtistTitleNaming() {
+        // "邰正宵-九百九十九朵玫瑰" (no spaces around the dash): the
+        // normalized key ranking hits directly — no fallback needed.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "九百九十九朵玫瑰", listOf("邰正宵"),
+            indexedLrc("邰正宵-九百九十九朵玫瑰.lrc"),
+        )
+        assertEquals(
+            listOf("邰正宵-九百九十九朵玫瑰.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertFalse(result.titleOnlyFallback)
+    }
+
+    @Test
+    fun matchTrackNumberPrefixFallsBackToTitlePart() {
+        // A track-number prefix ("01. ") poisons every key the file
+        // contributes, so only the title-only phase can reach it.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "九百九十九朵玫瑰", listOf("邰正宵"),
+            indexedLrc("01. 邰正宵 - 九百九十九朵玫瑰.lrc"),
+        )
+        assertEquals(
+            listOf("01. 邰正宵 - 九百九十九朵玫瑰.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertTrue(result.titleOnlyFallback)
+    }
+
+    @Test
+    fun matchBareTitleFileStillRanksWithoutFallback() {
+        // A bare "Title.lrc" matches on the track's bare-title key
+        // itself — ranked, not a fallback product.
+        val result = LocalLyricsMatcher.matchDetailed(
+            "九百九十九朵玫瑰", listOf("邰正宵"),
+            indexedLrc("九百九十九朵玫瑰.lrc"),
+        )
+        assertEquals(
+            listOf("九百九十九朵玫瑰.lrc"),
+            result.files.map { it.file.fileName },
+        )
+        assertFalse(result.titleOnlyFallback)
     }
 
     @Test

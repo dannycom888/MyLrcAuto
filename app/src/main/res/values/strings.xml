@@ -68,6 +68,8 @@
     <string name="settings_lrcdiag_state_ready">Ready</string>
     <string name="settings_lrcdiag_state_unreadable">Folder can\'t be read</string>
     <string name="settings_lrcdiag_index_count">Indexed .lrc files</string>
+    <string name="settings_lrcdiag_index_audio_count">Indexed audio files</string>
+    <string name="settings_lrcdiag_index_dropped">Rows dropped in last scan</string>
     <string name="settings_lrcdiag_track">Track (as reported)</string>
     <string name="settings_lrcdiag_source">Source</string>
     <string name="settings_lrcdiag_audio_found">Audio file found</string>
@@ -84,6 +86,12 @@
     <string name="settings_lrcdiag_outcome_parse_empty">Matched file has no timed lines</string>
     <string name="settings_lrcdiag_outcome_read_failed">Matched file could not be read</string>
     <string name="settings_lrcdiag_outcome_error">Lookup failed (folder / index)</string>
+    <string name="settings_lrcdiag_probe">Name contains title, raw (audio/.lrc)</string>
+    <string name="settings_lrcdiag_match_step">Matched via</string>
+    <string name="settings_lrcdiag_step_audio_artist">Audio file, same-stem (with artist)</string>
+    <string name="settings_lrcdiag_step_audio_title">Audio file, same-stem (title only)</string>
+    <string name="settings_lrcdiag_step_name_artist">By name (artist + title)</string>
+    <string name="settings_lrcdiag_step_name_title">By name (title only)</string>
 
     <string name="car_silent">Nothing playing</string>
     <string name="car_silent_body">Start a song in Poweramp and the words will show here.</string>

@@ -10,12 +10,22 @@ package com.dannycom888.mylrcauto.lyrics
  * dependency, and the shape is fixed.
  *
  * Shape:
- * `{"v":1,"folder":"<folder uri>","lrc":[{"u":"<uri>","n":"<name>"}, ...],"audio":[...]}`
+ * `{"v":2,"folder":"<folder uri>","lrc":[{"u":"<uri>","n":"<name>"}, ...],"audio":[...]}`
  *
  * Parsing is strict: anything malformed returns null and the caller treats
  * it as "no cache" and walks the folder instead.
+ *
+ * Format v2 (v1.0.23) carries the same shape as v1; the version bump is
+ * the invalidation. A v1 cache was built by the old `DocumentFile` walk,
+ * which could silently drop rows (see [FolderWalk]) and then froze that
+ * degraded listing to disk, re-serving it across restarts — so any cache
+ * written by v1.0.22 or earlier is discarded and rebuilt once by the
+ * hardened walk instead of being trusted.
  */
 object LyricsIndexCache {
+
+    /** The only cache format version this build writes or accepts. */
+    private const val FORMAT_VERSION = 2L
 
     /** One cached index, as read back from disk. */
     data class CachedIndex(
@@ -26,7 +36,7 @@ object LyricsIndexCache {
 
     fun serialize(folderUri: String, lrc: List<LocalLrcFile>, audio: List<LocalAudioFile>): String {
         val out = StringBuilder()
-        out.append("{\"v\":1,\"folder\":")
+        out.append("{\"v\":2,\"folder\":")
         out.append(escape(folderUri))
         out.append(",\"lrc\":[")
         lrc.forEachIndexed { index, file ->
@@ -45,7 +55,7 @@ object LyricsIndexCache {
     private fun entry(uriString: String, fileName: String): String =
         "{\"u\":" + escape(uriString) + ",\"n\":" + escape(fileName) + "}"
 
-    /** Parses a cache file, or null when it is not a well-formed v1 cache. */
+    /** Parses a cache file, or null when it is not a well-formed current-version cache. */
     fun parse(json: String): CachedIndex? {
         val root = try {
             val parser = JsonParser(json)
@@ -55,7 +65,7 @@ object LyricsIndexCache {
         } catch (_: Exception) {
             return null
         } ?: return null
-        if ((root["v"] as? Number)?.toLong() != 1L) return null
+        if ((root["v"] as? Number)?.toLong() != FORMAT_VERSION) return null
         val folderUri = root["folder"] as? String ?: return null
         val lrc = entries(root["lrc"]) { uri, name -> LocalLrcFile(uri, name) } ?: return null
         val audio = entries(root["audio"]) { uri, name -> LocalAudioFile(uri, name) } ?: return null

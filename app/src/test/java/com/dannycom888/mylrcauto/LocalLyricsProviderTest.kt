@@ -1,6 +1,7 @@
 package com.dannycom888.mylrcauto
 
 import android.content.ContextWrapper
+import com.dannycom888.mylrcauto.lyrics.FolderWalk
 import com.dannycom888.mylrcauto.lyrics.LocalAudioFile
 import com.dannycom888.mylrcauto.lyrics.LocalLrcFile
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
@@ -35,8 +36,8 @@ class LocalLyricsProviderTest {
     ) : LocalLyricsSource {
         override fun isConfigured(): Boolean = true
 
-        override suspend fun listAll(): Pair<List<LocalLrcFile>, List<LocalAudioFile>> =
-            lrcFiles to audioFiles
+        override suspend fun listAll(): FolderWalk =
+            FolderWalk(lrcFiles, audioFiles, droppedCount = 0)
 
         override suspend fun readBytes(file: LocalLrcFile): ByteArray? =
             bytesByName[file.fileName]

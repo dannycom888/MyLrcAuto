@@ -51,6 +51,7 @@ import com.dannycom888.mylrcauto.car.LaunchRecord
 import com.dannycom888.mylrcauto.car.formatLaunchTimestamp
 import com.dannycom888.mylrcauto.lyrics.DiagValue
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
+import com.dannycom888.mylrcauto.lyrics.LookupMatchStep
 import com.dannycom888.mylrcauto.lyrics.LookupOutcome
 import com.dannycom888.mylrcauto.lyrics.LookupTrace
 import com.dannycom888.mylrcauto.lyrics.LyricsDiagLabel
@@ -205,6 +206,8 @@ private fun LaunchDiagnosticsSection(record: LaunchRecord?) {
 private fun lyricsDiagLabelRes(label: LyricsDiagLabel): Int = when (label) {
     LyricsDiagLabel.INDEX_STATE -> R.string.settings_lrcdiag_index_state
     LyricsDiagLabel.INDEX_COUNT -> R.string.settings_lrcdiag_index_count
+    LyricsDiagLabel.INDEX_AUDIO_COUNT -> R.string.settings_lrcdiag_index_audio_count
+    LyricsDiagLabel.INDEX_DROPPED -> R.string.settings_lrcdiag_index_dropped
     LyricsDiagLabel.LOOKUP_TIME -> R.string.settings_diag_time
     LyricsDiagLabel.TRACK -> R.string.settings_lrcdiag_track
     LyricsDiagLabel.SOURCE -> R.string.settings_lrcdiag_source
@@ -212,7 +215,9 @@ private fun lyricsDiagLabelRes(label: LyricsDiagLabel): Int = when (label) {
     LyricsDiagLabel.SAME_STEM -> R.string.settings_lrcdiag_same_stem
     LyricsDiagLabel.TITLE_CHECK -> R.string.settings_lrcdiag_title_check
     LyricsDiagLabel.FALLBACK_MATCHES -> R.string.settings_lrcdiag_fallback
+    LyricsDiagLabel.RAW_PROBE -> R.string.settings_lrcdiag_probe
     LyricsDiagLabel.WINNER_FILE -> R.string.settings_lrcdiag_winner
+    LyricsDiagLabel.MATCH_STEP -> R.string.settings_lrcdiag_match_step
     LyricsDiagLabel.PARSED_LINES -> R.string.settings_lrcdiag_parsed_lines
     LyricsDiagLabel.READ_ISSUES -> R.string.settings_lrcdiag_read_issues
     LyricsDiagLabel.OUTCOME -> R.string.settings_lrcdiag_outcome
@@ -235,6 +240,19 @@ private fun lookupOutcomeRes(outcome: LookupOutcome): Int = when (outcome) {
     LookupOutcome.READ_FAILED -> R.string.settings_lrcdiag_outcome_read_failed
     LookupOutcome.ERROR -> R.string.settings_lrcdiag_outcome_error
 }
+
+/** Label string for the step that produced a lookup's document. */
+private fun lookupMatchStepRes(step: LookupMatchStep): Int =
+    when (step) {
+        LookupMatchStep.AUDIO_WITH_ARTIST ->
+            R.string.settings_lrcdiag_step_audio_artist
+        LookupMatchStep.AUDIO_TITLE_ONLY ->
+            R.string.settings_lrcdiag_step_audio_title
+        LookupMatchStep.NAME_WITH_ARTIST ->
+            R.string.settings_lrcdiag_step_name_artist
+        LookupMatchStep.NAME_TITLE_ONLY ->
+            R.string.settings_lrcdiag_step_name_title
+    }
 
 /**
  * The lyrics index state and the most recent lookup's trace
@@ -270,6 +288,7 @@ private fun LyricsDiagnosticsSection(indexDiag: LyricsIndexDiag, lookup: LookupT
                 is DiagValue.YesNo -> if (value.value) yes else no
                 is DiagValue.IndexState -> stringResource(lyricsIndexStateRes(value.state))
                 is DiagValue.Outcome -> stringResource(lookupOutcomeRes(value.outcome))
+                is DiagValue.MatchStep -> stringResource(lookupMatchStepRes(value.step))
             },
         )
     }

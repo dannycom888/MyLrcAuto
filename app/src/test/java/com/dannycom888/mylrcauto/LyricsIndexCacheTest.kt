@@ -5,6 +5,7 @@ import com.dannycom888.mylrcauto.lyrics.LocalLrcFile
 import com.dannycom888.mylrcauto.lyrics.LyricsIndexCache
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyricsIndexCacheTest {
@@ -25,6 +26,9 @@ class LyricsIndexCacheTest {
     @Test
     fun roundTripPreservesEntries() {
         val json = LyricsIndexCache.serialize(folderUri, lrcFiles, audioFiles)
+        // The current format version is 2 (v1 was retired in v1.0.23 —
+        // see parseRejectsOlderFormatVersion).
+        assertTrue(json.startsWith("{\"v\":2,"))
         val parsed = LyricsIndexCache.parse(json)
         assertEquals(folderUri, parsed?.folderUri)
         assertEquals(lrcFiles, parsed?.lrc)
@@ -44,10 +48,25 @@ class LyricsIndexCacheTest {
     fun parseRejectsGarbage() {
         assertNull(LyricsIndexCache.parse(""))
         assertNull(LyricsIndexCache.parse("not json"))
-        assertNull(LyricsIndexCache.parse("{\"v\":1}"))
-        assertNull(LyricsIndexCache.parse("{\"v\":2,\"folder\":\"x\",\"lrc\":[],\"audio\":[]}"))
-        assertNull(LyricsIndexCache.parse("{\"v\":1,\"folder\":\"x\",\"lrc\":[{\"u\":1}],\"audio\":[]}"))
-        assertNull(LyricsIndexCache.parse("{\"v\":1,\"folder\":\"x\",\"lrc\":[],\"audio\":[]} trailing"))
+        assertNull(LyricsIndexCache.parse("{\"v\":2}"))
+        assertNull(LyricsIndexCache.parse("{\"v\":3,\"folder\":\"x\",\"lrc\":[],\"audio\":[]}"))
+        assertNull(LyricsIndexCache.parse("{\"v\":2,\"folder\":\"x\",\"lrc\":[{\"u\":1}],\"audio\":[]}"))
+        assertNull(LyricsIndexCache.parse("{\"v\":2,\"folder\":\"x\",\"lrc\":[],\"audio\":[]} trailing"))
+    }
+
+    @Test
+    fun parseRejectsOlderFormatVersion() {
+        // A well-formed v1 document is still rejected: v1 caches were
+        // written by the pre-v1.0.23 DocumentFile walk, which could
+        // silently drop rows, and the degraded listing must be rebuilt
+        // by the hardened walk rather than served again.
+        assertNull(
+            LyricsIndexCache.parse(
+                "{\"v\":1,\"folder\":\"x\"," +
+                    "\"lrc\":[{\"u\":\"content://x/a.lrc\",\"n\":\"A - B.lrc\"}]," +
+                    "\"audio\":[{\"u\":\"content://x/a.mp3\",\"n\":\"A - B.mp3\"}]}",
+            ),
+        )
     }
 
     @Test
