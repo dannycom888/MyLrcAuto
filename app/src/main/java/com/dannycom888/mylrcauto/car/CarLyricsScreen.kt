@@ -60,6 +60,24 @@ class CarLyricsScreen(
     /** What the host is currently showing, so a redraw can be skipped when nothing has changed. */
     private var shown: Content? = null
 
+    /**
+     * The surface-ask window (v1.0.29): when the currently
+     * foregrounded stretch began asking for a surface that is not
+     * live yet, and whether that window has closed unanswered.
+     *
+     * The ask is the surface template itself (see chooseTemplate's
+     * speculative branch): presenting it is the only app-side act
+     * that provokes the host's surface offer. The window bounds
+     * the cost on a host that never answers — a few seconds of the
+     * surface template's title strip, then the working three-line
+     * pane — and it is per-foregrounding: leaving the big screen
+     * (or the surface arriving) resets it, so the next card tap
+     * asks afresh. Owned here rather than in chooseTemplate,
+     * which stays a pure function of its inputs.
+     */
+    private var surfaceAskSinceMs: Long? = null
+    private var surfaceAskExhausted: Boolean = false
+
     internal data class Content(
         val glance: CarGlance,
         val title: String,
@@ -222,6 +240,11 @@ class CarLyricsScreen(
                 visibleAreaEmpty = surface.visibleArea.value?.isEmpty == true,
                 screenStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
                 apiLevel = carContext.carAppApiLevel,
+                surfaceCallbackRegistered = surface.callbackRegistered.value,
+                surfaceCallbackFired = surface.callbackFired.value,
+                surfaceContainerWidthPx = surface.containerWidthPx.value,
+                surfaceContainerHeightPx = surface.containerHeightPx.value,
+                surfaceFailure = surface.surfaceFailure.value,
                 error = error,
             )
             if (record.sameRenderAs(lastRenderRecord)) return
@@ -280,6 +303,26 @@ class CarLyricsScreen(
             positionMs = playback.currentMs(),
         )
 
+        val screenStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        val surfaceLiveNow = surface.live.value
+        val surfaceRegistered = surface.callbackRegistered.value
+
+        // The surface-ask window's bookkeeping (see the fields'
+        // doc). Only a STARTED screen asks: a covered screen is in
+        // the dashboard slot, where the three-line card is the
+        // answer and no surface is wanted. A live surface, or
+        // leaving the foreground, resets the window.
+        if (!screenStarted || surfaceLiveNow) {
+            surfaceAskSinceMs = null
+            surfaceAskExhausted = false
+        } else if (surfaceRegistered && !surfaceAskExhausted) {
+            val nowMs = System.currentTimeMillis()
+            val since = surfaceAskSinceMs ?: nowMs.also { surfaceAskSinceMs = it }
+            if (nowMs - since >= SURFACE_ASK_WINDOW_MS) surfaceAskExhausted = true
+        }
+        val surfaceRequested = screenStarted && !surfaceLiveNow &&
+            surfaceRegistered && !surfaceAskExhausted
+
         return Content(
             glance = glance,
             title = snapshot.track?.title?.takeIf { it.isNotBlank() }
@@ -295,12 +338,16 @@ class CarLyricsScreen(
             // has to be STARTED (the full-screen foreground app) — a
             // covered screen in the dashboard slot falls back to the
             // three-line card even if the host kept the surface live.
+            // And with no surface yet, a registered callback inside its
+            // ask window still returns the surface template: presenting
+            // it is how the app asks for the surface at all (v1.0.29).
             onSurface = chooseTemplate(
-                surfaceLive = surface.live.value,
+                surfaceLive = surfaceLiveNow,
                 apiLevel = carContext.carAppApiLevel,
                 surfaceWidthDp = surface.surfaceWidthDp.value,
                 visibleAreaEmpty = surface.visibleArea.value?.isEmpty == true,
-                screenStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+                screenStarted = screenStarted,
+                surfaceRequested = surfaceRequested,
             ) == TemplateChoice.ON_SURFACE,
         )
     }
@@ -592,6 +639,18 @@ class CarLyricsScreen(
          * second, and the fix is to let the second one wait for the next tick.
          */
         const val MIN_REDRAW_GAP_MS = 1_000L
+
+        /**
+         * How long a foregrounded big screen presents the surface
+         * template speculatively — the ask — before concluding the
+         * host is not going to offer a surface this time and
+         * returning the three-line pane (v1.0.29). Hosts that do
+         * answer do so within about a second of the template going
+         * up (the working runs' surface arrived ~1s after open);
+         * five seconds is generous headroom, not a wait the driver
+         * is expected to sit through often.
+         */
+        const val SURFACE_ASK_WINDOW_MS = 5_000L
     }
 }
 
@@ -686,18 +745,23 @@ internal fun shouldInvalidateOnStateChange(
  * The header action every big-screen pane carries — the ONE wiring
  * point for it (v1.0.27).
  *
- * `Action.BACK` is the Car App Library's standard back action: the
- * host gives it the arrow, and tapping it pops the screen — on this
- * app's root screen, that is what leaves the big screen. The
- * 2026-11-13 car test reported the arrow dead on the broken pane;
- * every pane in this screen sets its header through this function,
- * so the wiring cannot drift between the main panes and the
- * emergency pane (the one the driver actually saw), and a unit
- * test pins that the value handed over is the library's standard
- * back action itself. What the host does with a correctly wired
- * BACK on a root screen is the host's side of the contract — if a
- * future car test still shows a dead arrow with this wiring in
- * place, the render record (see CarRenderDiagnostics) is what
- * separates "the pane was wrong" from "the host ignored it".
+ * `Action.BACK` is the Car App Library's standard back action:
+ * the host gives it the arrow, and tapping it makes the host call
+ * back into the app (`IAppManager.onBackPressed` →
+ * `CarContext`'s OnBackPressedDispatcher). The header cannot
+ * carry the exit itself — the header constraint
+ * (ACTIONS_CONSTRAINTS_HEADER, library bytecode) forbids
+ * on-click listeners outright — so what a press DOES is decided
+ * by the dispatcher: the session registers the callback that
+ * finishes the car app (see CarSession.ensureBackCallback;
+ * v1.0.29). Before that registration existed, a press fell
+ * through to the library's fallback, `ScreenManager.pop()`,
+ * which is a no-op on a one-screen stack: the dead arrow in the
+ * 2026-11-13 car tests.
+ *
+ * Every pane in this screen sets its header through this
+ * function, so the wiring cannot drift between the main panes
+ * and the emergency pane, and a unit test pins that the value
+ * handed over is the library's standard back action itself.
  */
 internal fun carPaneHeaderAction(): Action = Action.BACK

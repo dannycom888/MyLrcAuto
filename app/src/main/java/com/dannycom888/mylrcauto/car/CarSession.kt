@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.activity.OnBackPressedCallback
 import androidx.car.app.AppManager
 import androidx.car.app.Screen
 import androidx.car.app.Session
@@ -120,6 +121,32 @@ class CarSession(
             }
         })
 
+        // v1.0.29: the surface callback is registered for EVERY
+        // session, here at creation — before the launch decision,
+        // so the FINISH path registers too. v1.0.27 registered only
+        // on the show paths (creation's SHOW branch and
+        // onNewIntent's), and the 2026-11-13 19:07 car run showed
+        // the hole in that shape: the session had been created by
+        // an icon tap (FINISH — no registration), the app had been
+        // finished, and the card tap's onNewIntent registered only
+        // afterwards — after the launch moment at which the host
+        // does its surface negotiation for a fresh foreground app.
+        // The callback never fired for that session: no surface,
+        // the fallback pane for the whole song, and nothing in the
+        // app could ask again. Registration is cheap and inert
+        // until the host offers a surface (a finished session's
+        // callback is released with the session, by CarSurface's
+        // lifecycle observer), so there is no path that should
+        // skip it.
+        ensureSurfaceCallback(app)
+
+        // The back arrow's exit (v1.0.29, see ensureBackCallback):
+        // registered for every session too, before the decision —
+        // a FINISH session needs no back handling (it is already
+        // leaving), but registering costs nothing and keeps the
+        // rule "every session wires both" free of branches.
+        ensureBackCallback()
+
         if (decision == LaunchDecision.FINISH_TO_DASHBOARD) {
             // Land back on the dashboard: finish the car app as
             // soon as this call has returned and the session exists
@@ -149,7 +176,8 @@ class CarSession(
             MirrorServiceControl.start(carContext.applicationContext)
         }
 
-        ensureSurfaceCallback(app)
+        // (The surface callback was already registered above, for
+        // every session shape — see ensureSurfaceCallback.)
 
         return CarLyricsScreen(carContext, app, surface)
     }
@@ -185,11 +213,13 @@ class CarSession(
                 // The big screen is this session's only screen and
                 // is already on its stack; the host brings the app
                 // forward itself. Keep the launch memory true — and
-                // make sure the surface callback exists (below): a
-                // session created through the FINISH path never
-                // registered one.
+                // re-ask for the surface callback: registration runs
+                // at creation for every session (v1.0.29), so this
+                // is the retry for the one case left, a creation-time
+                // registration that failed.
                 app.launchConnectionState.onBigScreenShown()
                 ensureSurfaceCallback(app)
+                ensureBackCallback()
             }
 
             LaunchDecision.FINISH_TO_DASHBOARD ->
@@ -213,18 +243,12 @@ class CarSession(
      * the door to the app's own drawing surface, without which the
      * big screen can only ever be the template fallback.
      *
-     * Asked for from the two places that show the big screen —
-     * onCreateScreen's show path, and onNewIntent's. The second is
-     * the one that mattered (v1.0.27, code-proven gap): a session
-     * created by an icon tap returns from onCreateScreen through
-     * the FINISH path, before any registration; the launch record
-     * from the 2026-11-13 car test (entry onNewIntent, decision
-     * SHOW_BIG_SCREEN) proves the card tap can land on exactly such
-     * a still-live session, and nothing on that path ever
-     * registered a callback for it — so no surface could arrive,
-     * and the big screen was stuck on the fallback pane. Asking
-     * here is idempotent by construction (one instance, created
-     * once), so the show path asking again costs nothing.
+     * Asked for from onCreateScreen — unconditionally, before the
+     * launch decision (v1.0.29; see the call site for the 19:07
+     * evidence) — and again from onNewIntent's show path, where it
+     * is the retry for a session whose creation-time registration
+     * failed. Asking is idempotent by construction (one instance,
+     * created once), so asking again costs nothing.
      *
      * Asked for once rather than when a screen appears: the host
      * answers whenever it is ready, and a callback registered later
@@ -244,7 +268,70 @@ class CarSession(
         }
         runCatching {
             carContext.getCarService(AppManager::class.java).setSurfaceCallback(callback)
+        }.onSuccess {
+            surface.onCallbackRegistered()
         }.onFailure { Log.w(TAG, "could not register the surface callback", it) }
+    }
+
+    /** Whether the back callback is registered (it is registered at most once per session). */
+    private var backCallbackRegistered: Boolean = false
+
+    /**
+     * Wires the big screen's back arrow to actually leave
+     * (v1.0.29) — the fix for the dead arrow in both the
+     * 2026-11-13 car runs.
+     *
+     * The mechanism, read from the Car App Library 1.7.0
+     * bytecode (not the docs, which never mention it):
+     *
+     * - The header action itself cannot carry the exit: a
+     *   template's header is validated against
+     *   ACTIONS_CONSTRAINTS_HEADER, which sets
+     *   `onClickListenerAllowed = false`. Action.BACK is a
+     *   listener-less standard action BY DESIGN — tapping it
+     *   only makes the host call `IAppManager.onBackPressed`.
+     * - That call lands on
+     *   `CarContext.getOnBackPressedDispatcher().onBackPressed()`.
+     *   With no callback registered, the dispatcher's fallback
+     *   runs: `ScreenManager.pop()`.
+     * - `pop()` is a deliberate no-op when the stack holds one
+     *   screen (`if (size <= 1) return`, verbatim in the
+     *   bytecode). This app's stack ALWAYS holds one screen —
+     *   CarLyricsScreen is the only screen the session ever
+     *   creates — so every back press on the big screen fell
+     *   into that no-op. The arrow was dead by construction,
+     *   on every pane, on both template paths — not a host
+     *   quirk and not a wiring slip: there was nothing anywhere
+     *   that turned a back press into an exit.
+     *
+     * The fix is the library's own extension point: an enabled
+     * [OnBackPressedCallback] on the session's dispatcher,
+     * whose press finishes the car app — the exact
+     * `finishCarApp()` the launch decision's FINISH path
+     * already proved lands this user back on the dashboard
+     * with the card alive. The dispatcher is template-agnostic,
+     * so the one registration covers the fallback pane, the
+     * message panes and the surface template's content pane
+     * alike. Scoped to the session's lifecycle (addCallback
+     * with the session as owner): a dead session's callback
+     * removes itself.
+     */
+    private fun ensureBackCallback() {
+        if (backCallbackRegistered) return
+        backCallbackRegistered = true
+        val callback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                Log.i(TAG, "back pressed on the big screen; finishing to the dashboard")
+                runCatching { carContext.finishCarApp() }
+                    .onFailure { Log.w(TAG, "finishCarApp on back failed", it) }
+            }
+        }
+        runCatching {
+            carContext.onBackPressedDispatcher.addCallback(this, callback)
+        }.onFailure {
+            backCallbackRegistered = false
+            Log.w(TAG, "could not register the back callback", it)
+        }
     }
 
     /**

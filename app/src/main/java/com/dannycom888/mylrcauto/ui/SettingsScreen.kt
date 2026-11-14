@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -26,6 +27,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +50,7 @@ import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.car.CarGlanceKind
 import com.dannycom888.mylrcauto.car.CarPaneKind
 import com.dannycom888.mylrcauto.car.CarRenderRecord
+import com.dannycom888.mylrcauto.car.CarSurfaceBlock
 import com.dannycom888.mylrcauto.car.LaunchDecision
 import com.dannycom888.mylrcauto.car.LaunchEntry
 import com.dannycom888.mylrcauto.car.LaunchRecord
@@ -282,6 +285,43 @@ private fun CarRenderDiagnosticsSection(record: CarRenderRecord?) {
         record.surfaceWidthDp?.let { "${it.roundToInt()} dp" } ?: none,
     )
     DiagRow(
+        stringResource(R.string.settings_renderdiag_callback_registered),
+        yesNo(record.surfaceCallbackRegistered),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_callback_fired),
+        yesNo(record.surfaceCallbackFired),
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_container),
+        if (record.surfaceContainerWidthPx != null && record.surfaceContainerHeightPx != null) {
+            "${record.surfaceContainerWidthPx} × ${record.surfaceContainerHeightPx} px"
+        } else {
+            none
+        },
+    )
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_blocked),
+        stringResource(
+            when (record.surfaceBlock) {
+                CarSurfaceBlock.ACTIVE -> R.string.settings_renderdiag_blocked_active
+                CarSurfaceBlock.API_TOO_LOW -> R.string.settings_renderdiag_blocked_api
+                CarSurfaceBlock.NOT_REGISTERED ->
+                    R.string.settings_renderdiag_blocked_not_registered
+                CarSurfaceBlock.NEVER_OFFERED ->
+                    R.string.settings_renderdiag_blocked_never_offered
+                CarSurfaceBlock.OFFER_FAILED ->
+                    R.string.settings_renderdiag_blocked_offer_failed
+                CarSurfaceBlock.OFFER_ENDED -> R.string.settings_renderdiag_blocked_offer_ended
+                CarSurfaceBlock.NOT_FOREGROUND ->
+                    R.string.settings_renderdiag_blocked_not_foreground
+                CarSurfaceBlock.AREA_EMPTY -> R.string.settings_renderdiag_blocked_area_empty
+                CarSurfaceBlock.TOO_NARROW -> R.string.settings_renderdiag_blocked_too_narrow
+                CarSurfaceBlock.UNKNOWN -> R.string.settings_renderdiag_blocked_unknown
+            },
+        ) + (record.surfaceFailure?.let { ": $it" } ?: ""),
+    )
+    DiagRow(
         stringResource(R.string.settings_renderdiag_area),
         stringResource(
             when {
@@ -488,22 +528,35 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
         )
         AppLanguage.entries.forEach { language ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { container.settings.setAppLanguage(language) }
-                    .padding(vertical = 0.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            // Compact rows (v1.0.29, the user's second pass at
+            // these): v1.0.19 zeroed the rows' vertical padding,
+            // but a Material3 RadioButton still enforces a 48dp
+            // minimum interactive size, so the rows stayed tall.
+            // For THESE rows only, the minimum is switched off and
+            // the row takes an explicit 36dp height — modestly
+            // tighter, not crushed; the text size is unchanged and
+            // every other section's rows keep the standard minimum.
+            CompositionLocalProvider(
+                LocalMinimumInteractiveComponentSize provides 0.dp,
             ) {
-                RadioButton(
-                    selected = settings.appLanguage == language,
-                    onClick = { container.settings.setAppLanguage(language) },
-                )
-                Text(
-                    text = languageLabel(language),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .clickable { container.settings.setAppLanguage(language) }
+                        .padding(vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = settings.appLanguage == language,
+                        onClick = { container.settings.setAppLanguage(language) },
+                    )
+                    Text(
+                        text = languageLabel(language),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
         }
 

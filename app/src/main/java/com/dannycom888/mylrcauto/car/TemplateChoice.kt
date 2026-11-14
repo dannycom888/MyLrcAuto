@@ -64,6 +64,20 @@ internal const val SPLIT_SCREEN_WIDTH_DP = 600f
  *   screen flips STARTED/STOPPED exactly when the host moves the app
  *   between full-screen and the slot, which is when the template should
  *   change anyway, and the tick loop's redraw gap dampens rapid swaps.
+ * - [surfaceRequested]: the surface callback is registered and the
+ *   screen's surface-ask window is still open (v1.0.29) — the
+ *   speculative branch. A host grants a surface in connection with a
+ *   surface-carrying template being on screen; while the fallback
+ *   pane is up, nothing app-side ever presents one, so a session
+ *   whose launch-time surface offer was missed (the 2026-11-13 19:07
+ *   run: created by an icon tap, finished, revived by a card tap)
+ *   waits forever for an offer the pane on screen never provokes.
+ *   Returning the surface template anyway — for a bounded window the
+ *   screen owns — IS the app presenting the ask. If the host answers,
+ *   the live branch takes over; if the window closes with no answer,
+ *   the screen falls back to the three-line pane, so a host that
+ *   truly never grants a surface costs a few seconds of the surface
+ *   template's title strip, not the working pane for good.
  *
  * The visible area arrives as an android.graphics.Rect, which cannot run
  * on the JVM, so the screen maps it to this boolean before calling here
@@ -75,10 +89,17 @@ internal fun chooseTemplate(
     surfaceWidthDp: Float?,
     visibleAreaEmpty: Boolean,
     screenStarted: Boolean,
+    surfaceRequested: Boolean = false,
 ): TemplateChoice {
     if (!screenStarted) return TemplateChoice.FALLBACK
-    if (!surfaceLive) return TemplateChoice.FALLBACK
     if (apiLevel < CarAppApiLevels.LEVEL_7) return TemplateChoice.FALLBACK
+    if (!surfaceLive) {
+        // No surface yet: the only way one arrives is the host
+        // offering it, and the offer is provoked by a surface
+        // template being on screen — so while the ask window is
+        // open, the surface template goes up speculatively.
+        return if (surfaceRequested) TemplateChoice.ON_SURFACE else TemplateChoice.FALLBACK
+    }
     if (visibleAreaEmpty) return TemplateChoice.FALLBACK
     if (surfaceWidthDp != null && surfaceWidthDp < SPLIT_SCREEN_WIDTH_DP) {
         return TemplateChoice.FALLBACK

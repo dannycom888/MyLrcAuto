@@ -122,6 +122,20 @@
     <string name="settings_renderdiag_started">Screen in foreground</string>
     <string name="settings_renderdiag_api">Host API level</string>
     <string name="settings_renderdiag_error">Fallback cause</string>
+    <string name="settings_renderdiag_callback_registered">Surface callback registered</string>
+    <string name="settings_renderdiag_callback_fired">Surface offered by host</string>
+    <string name="settings_renderdiag_container">Surface size offered</string>
+    <string name="settings_renderdiag_blocked">Why no surface</string>
+    <string name="settings_renderdiag_blocked_active">Surface active</string>
+    <string name="settings_renderdiag_blocked_api">Host API too low</string>
+    <string name="settings_renderdiag_blocked_not_registered">Callback not registered</string>
+    <string name="settings_renderdiag_blocked_never_offered">Host never offered a surface</string>
+    <string name="settings_renderdiag_blocked_offer_failed">Surface offer failed</string>
+    <string name="settings_renderdiag_blocked_offer_ended">Surface was taken back</string>
+    <string name="settings_renderdiag_blocked_not_foreground">Screen not in foreground</string>
+    <string name="settings_renderdiag_blocked_area_empty">Visible area empty</string>
+    <string name="settings_renderdiag_blocked_too_narrow">Split-screen slot (too narrow)</string>
+    <string name="settings_renderdiag_blocked_unknown">Unknown</string>
 
     <string name="car_silent">Nothing playing</string>
     <string name="car_silent_body">Start a song in Poweramp and the words will show here.</string>

@@ -172,4 +172,94 @@ class TemplateChoiceTest {
             ),
         )
     }
+
+    // ---- the v1.0.29 speculative branch -----------------------------------
+    //
+    // A host grants a surface in connection with a surface template
+    // being on screen; while the fallback pane is up, nothing
+    // provokes the offer. The 2026-11-13 19:07 run sat on the pane
+    // for a whole song because the session's launch-time offer had
+    // been missed. While the callback is registered and the ask
+    // window is open, the surface template goes up WITHOUT a live
+    // surface — presenting it is the ask.
+
+    @Test
+    fun `registered callback inside the ask window shows the surface template without a surface`() {
+        assertEquals(
+            TemplateChoice.ON_SURFACE,
+            chooseTemplate(
+                surfaceLive = false,
+                apiLevel = CarAppApiLevels.LEVEL_8,
+                surfaceWidthDp = null,
+                visibleAreaEmpty = false,
+                screenStarted = true,
+                surfaceRequested = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `no surface and no open ask window still falls back`() {
+        assertEquals(
+            TemplateChoice.FALLBACK,
+            chooseTemplate(
+                surfaceLive = false,
+                apiLevel = CarAppApiLevels.LEVEL_8,
+                surfaceWidthDp = null,
+                visibleAreaEmpty = false,
+                screenStarted = true,
+                surfaceRequested = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `the ask never fires for a covered screen`() {
+        // Covered = dashboard / split-screen slot: the three-line
+        // card is the answer there, surface or no surface.
+        assertEquals(
+            TemplateChoice.FALLBACK,
+            chooseTemplate(
+                surfaceLive = false,
+                apiLevel = CarAppApiLevels.LEVEL_8,
+                surfaceWidthDp = null,
+                visibleAreaEmpty = false,
+                screenStarted = false,
+                surfaceRequested = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `the ask never fires below api level 7`() {
+        assertEquals(
+            TemplateChoice.FALLBACK,
+            chooseTemplate(
+                surfaceLive = false,
+                apiLevel = CarAppApiLevels.LEVEL_5,
+                surfaceWidthDp = null,
+                visibleAreaEmpty = false,
+                screenStarted = true,
+                surfaceRequested = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `a live narrow surface still falls back even inside the ask window`() {
+        // The live branch's own checks outrank the ask: a narrow
+        // live surface is a split-screen slot, and the card is the
+        // answer there.
+        assertEquals(
+            TemplateChoice.FALLBACK,
+            chooseTemplate(
+                surfaceLive = true,
+                apiLevel = CarAppApiLevels.LEVEL_8,
+                surfaceWidthDp = 400f,
+                visibleAreaEmpty = false,
+                screenStarted = true,
+                surfaceRequested = true,
+            ),
+        )
+    }
 }

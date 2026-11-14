@@ -2,6 +2,7 @@ package com.dannycom888.mylrcauto.car
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.car.app.versioning.CarAppApiLevels
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,6 +75,81 @@ fun CarGlance.kind(): CarGlanceKind = when (this) {
 }
 
 /**
+ * Why the surface is not the thing drawing the big screen (v1.0.29).
+ *
+ * Up to v1.0.28 the record could only say the surface was not live
+ * and that no template build had failed — which left the
+ * 2026-11-13 19:07 run (fallback pane up, lyrics live-updating,
+ * surface never connected, fallback cause EMPTY) undecidable:
+ * "not live" hides at least four different states, and the empty
+ * cause read as "nothing went wrong" when in fact nothing had
+ * been given the chance to go wrong. The values below are the
+ * states, in the order the surface path itself walks them:
+ * register → be offered → use the offer → be chosen.
+ */
+enum class CarSurfaceBlock {
+    /** The surface template is the pane that went back. */
+    ACTIVE,
+
+    /** The host is below car API 7: no template of ours can carry a surface. */
+    API_TOO_LOW,
+
+    /** The session never registered a surface callback with the host. */
+    NOT_REGISTERED,
+
+    /** Registered, but the host never called `onSurfaceAvailable`. */
+    NEVER_OFFERED,
+
+    /** The host offered, and using the offer failed on the app's side. */
+    OFFER_FAILED,
+
+    /** The host offered and later took the surface back before this render. */
+    OFFER_ENDED,
+
+    /** A surface is live, but the screen is covered (dashboard / split-screen). */
+    NOT_FOREGROUND,
+
+    /** A surface is live, but the host reports its visible area as empty. */
+    AREA_EMPTY,
+
+    /** A surface is live, but it is a split-screen slot, not a full screen. */
+    TOO_NARROW,
+
+    /** The facts do not explain the fallback (should not happen). */
+    UNKNOWN,
+}
+
+/**
+ * Derives [CarSurfaceBlock] from one render's facts, in the
+ * surface path's own order. Pure, so every branch is unit-tested:
+ * the next car screenshot names the exact step the path stopped
+ * at instead of another "surface not connected".
+ */
+fun carSurfaceBlock(
+    pane: CarPaneKind,
+    surfaceLive: Boolean,
+    surfaceWidthDp: Float?,
+    visibleAreaEmpty: Boolean,
+    screenStarted: Boolean,
+    apiLevel: Int,
+    callbackRegistered: Boolean,
+    callbackFired: Boolean,
+    surfaceFailure: String?,
+): CarSurfaceBlock = when {
+    pane == CarPaneKind.ON_SURFACE -> CarSurfaceBlock.ACTIVE
+    apiLevel < CarAppApiLevels.LEVEL_7 -> CarSurfaceBlock.API_TOO_LOW
+    !surfaceLive && !callbackRegistered -> CarSurfaceBlock.NOT_REGISTERED
+    !surfaceLive && !callbackFired -> CarSurfaceBlock.NEVER_OFFERED
+    !surfaceLive && surfaceFailure != null -> CarSurfaceBlock.OFFER_FAILED
+    !surfaceLive -> CarSurfaceBlock.OFFER_ENDED
+    !screenStarted -> CarSurfaceBlock.NOT_FOREGROUND
+    visibleAreaEmpty -> CarSurfaceBlock.AREA_EMPTY
+    surfaceWidthDp != null && surfaceWidthDp < SPLIT_SCREEN_WIDTH_DP ->
+        CarSurfaceBlock.TOO_NARROW
+    else -> CarSurfaceBlock.UNKNOWN
+}
+
+/**
  * Which pane a render produced, from the same facts the screen
  * itself used: a failure is the emergency pane whatever the
  * content was; a live-surface content is the surface template;
@@ -108,6 +184,19 @@ data class CarRenderRecord(
     val errorClass: String?,
     /** The fallback's cause, truncated: exception message. */
     val errorMessage: String?,
+    /**
+     * The surface-offer facts (v1.0.29): whether the session's
+     * callback reached the host, whether the host ever answered
+     * it, and the size of the container it offered.
+     */
+    val surfaceCallbackRegistered: Boolean = false,
+    val surfaceCallbackFired: Boolean = false,
+    val surfaceContainerWidthPx: Int? = null,
+    val surfaceContainerHeightPx: Int? = null,
+    /** Why using an offered surface failed, truncated; null when none did. */
+    val surfaceFailure: String? = null,
+    /** Derived: why the surface is not drawing (see [carSurfaceBlock]). */
+    val surfaceBlock: CarSurfaceBlock = CarSurfaceBlock.UNKNOWN,
 )
 
 /**
@@ -128,20 +217,44 @@ fun carRenderRecord(
     screenStarted: Boolean,
     apiLevel: Int,
     error: Throwable?,
-): CarRenderRecord = CarRenderRecord(
-    timestampMs = timestampMs,
-    pane = carPaneKind(onSurface, glance, failed = error != null),
-    glance = glance.kind(),
-    lineCount = lineCount,
-    surfaceLive = surfaceLive,
-    surfaceWidthDp = surfaceWidthDp,
-    visibleAreaReported = visibleAreaReported,
-    visibleAreaEmpty = visibleAreaEmpty,
-    screenStarted = screenStarted,
-    apiLevel = apiLevel,
-    errorClass = error?.javaClass?.simpleName,
-    errorMessage = error?.message?.take(MAX_ERROR_MESSAGE_CHARS),
-)
+    surfaceCallbackRegistered: Boolean = false,
+    surfaceCallbackFired: Boolean = false,
+    surfaceContainerWidthPx: Int? = null,
+    surfaceContainerHeightPx: Int? = null,
+    surfaceFailure: String? = null,
+): CarRenderRecord {
+    val pane = carPaneKind(onSurface, glance, failed = error != null)
+    return CarRenderRecord(
+        timestampMs = timestampMs,
+        pane = pane,
+        glance = glance.kind(),
+        lineCount = lineCount,
+        surfaceLive = surfaceLive,
+        surfaceWidthDp = surfaceWidthDp,
+        visibleAreaReported = visibleAreaReported,
+        visibleAreaEmpty = visibleAreaEmpty,
+        screenStarted = screenStarted,
+        apiLevel = apiLevel,
+        errorClass = error?.javaClass?.simpleName,
+        errorMessage = error?.message?.take(MAX_ERROR_MESSAGE_CHARS),
+        surfaceCallbackRegistered = surfaceCallbackRegistered,
+        surfaceCallbackFired = surfaceCallbackFired,
+        surfaceContainerWidthPx = surfaceContainerWidthPx,
+        surfaceContainerHeightPx = surfaceContainerHeightPx,
+        surfaceFailure = surfaceFailure?.take(MAX_ERROR_MESSAGE_CHARS),
+        surfaceBlock = carSurfaceBlock(
+            pane = pane,
+            surfaceLive = surfaceLive,
+            surfaceWidthDp = surfaceWidthDp,
+            visibleAreaEmpty = visibleAreaEmpty,
+            screenStarted = screenStarted,
+            apiLevel = apiLevel,
+            callbackRegistered = surfaceCallbackRegistered,
+            callbackFired = surfaceCallbackFired,
+            surfaceFailure = surfaceFailure,
+        ),
+    )
+}
 
 /**
  * True when two records describe the same render (everything but
@@ -172,6 +285,12 @@ fun CarRenderRecord.toPrefsMap(): Map<String, Any?> = buildMap {
     put(KEY_API_LEVEL, apiLevel)
     errorClass?.let { put(KEY_ERROR_CLASS, it) }
     errorMessage?.let { put(KEY_ERROR_MESSAGE, it) }
+    put(KEY_CALLBACK_REGISTERED, surfaceCallbackRegistered)
+    put(KEY_CALLBACK_FIRED, surfaceCallbackFired)
+    surfaceContainerWidthPx?.let { put(KEY_CONTAINER_WIDTH_PX, it) }
+    surfaceContainerHeightPx?.let { put(KEY_CONTAINER_HEIGHT_PX, it) }
+    surfaceFailure?.let { put(KEY_SURFACE_FAILURE, it) }
+    put(KEY_SURFACE_BLOCK, surfaceBlock.name)
 }
 
 /** The inverse of [toPrefsMap]; null when the map holds no (or a broken) record. */
@@ -196,6 +315,14 @@ fun carRenderRecordFromPrefsMap(values: Map<String, Any?>): CarRenderRecord? {
         apiLevel = values[KEY_API_LEVEL] as? Int ?: 0,
         errorClass = values[KEY_ERROR_CLASS] as? String,
         errorMessage = values[KEY_ERROR_MESSAGE] as? String,
+        surfaceCallbackRegistered = values[KEY_CALLBACK_REGISTERED] as? Boolean ?: false,
+        surfaceCallbackFired = values[KEY_CALLBACK_FIRED] as? Boolean ?: false,
+        surfaceContainerWidthPx = values[KEY_CONTAINER_WIDTH_PX] as? Int,
+        surfaceContainerHeightPx = values[KEY_CONTAINER_HEIGHT_PX] as? Int,
+        surfaceFailure = values[KEY_SURFACE_FAILURE] as? String,
+        surfaceBlock = runCatching {
+            CarSurfaceBlock.valueOf(values[KEY_SURFACE_BLOCK] as? String ?: "")
+        }.getOrDefault(CarSurfaceBlock.UNKNOWN),
     )
 }
 
@@ -211,6 +338,12 @@ private const val KEY_SCREEN_STARTED = "screen_started"
 private const val KEY_API_LEVEL = "api_level"
 private const val KEY_ERROR_CLASS = "error_class"
 private const val KEY_ERROR_MESSAGE = "error_message"
+private const val KEY_CALLBACK_REGISTERED = "callback_registered"
+private const val KEY_CALLBACK_FIRED = "callback_fired"
+private const val KEY_CONTAINER_WIDTH_PX = "container_width_px"
+private const val KEY_CONTAINER_HEIGHT_PX = "container_height_px"
+private const val KEY_SURFACE_FAILURE = "surface_failure"
+private const val KEY_SURFACE_BLOCK = "surface_block"
 
 /**
  * SharedPreferences-backed holder for the most recent

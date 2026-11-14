@@ -55,6 +55,62 @@ class CarSurfaceState {
      */
     val surfaceWidthDp: StateFlow<Float?> = _surfaceWidthDp.asStateFlow()
 
+    // ---- the v1.0.29 surface-offer facts -----------------------------------
+    //
+    // "No surface" used to be a single fact (live == false), and three
+    // different failures hide inside it: the callback was never registered,
+    // it was registered but the host never answered it, or the host answered
+    // and the app's own presentation failed. The 2026-11-13 19:07 car run
+    // sat in one of those states for a whole song with the diagnostics
+    // unable to say which. These facts are what separate them; the render
+    // record (CarRenderDiagnostics) carries them to Settings.
+
+    private val _callbackRegistered = MutableStateFlow(false)
+
+    /** True once the session's surface callback is registered with the host. */
+    val callbackRegistered: StateFlow<Boolean> = _callbackRegistered.asStateFlow()
+
+    private val _callbackFired = MutableStateFlow(false)
+
+    /**
+     * True once the host has called `onSurfaceAvailable` at least once this
+     * session — the offer arrived, whether or not it could be used.
+     */
+    val callbackFired: StateFlow<Boolean> = _callbackFired.asStateFlow()
+
+    private val _containerWidthPx = MutableStateFlow<Int?>(null)
+
+    /** Width of the most recently offered surface container, in px. */
+    val containerWidthPx: StateFlow<Int?> = _containerWidthPx.asStateFlow()
+
+    private val _containerHeightPx = MutableStateFlow<Int?>(null)
+
+    /** Height of the most recently offered surface container, in px. */
+    val containerHeightPx: StateFlow<Int?> = _containerHeightPx.asStateFlow()
+
+    private val _surfaceFailure = MutableStateFlow<String?>(null)
+
+    /**
+     * Why the most recent surface offer could not be used (the virtual
+     * display refused, or the presentation would not show), as
+     * "ExceptionClass: message"; null when no offer has failed.
+     */
+    val surfaceFailure: StateFlow<String?> = _surfaceFailure.asStateFlow()
+
+    internal fun onCallbackRegistered() {
+        _callbackRegistered.value = true
+    }
+
+    internal fun onCallbackFired(widthPx: Int, heightPx: Int) {
+        _callbackFired.value = true
+        _containerWidthPx.value = widthPx
+        _containerHeightPx.value = heightPx
+    }
+
+    internal fun onSurfaceFailure(failure: String) {
+        _surfaceFailure.value = failure
+    }
+
     internal fun onLive(live: Boolean) {
         _live.value = live
         if (!live) {

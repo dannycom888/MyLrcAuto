@@ -55,7 +55,14 @@ class CarSurface(
     }
 
     override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
-        val surface = surfaceContainer.surface ?: return
+        // The offer itself is a diagnostic fact (v1.0.29): the render
+        // record separates "the host never offered" from "it offered
+        // and we could not use it", which the live flag alone cannot.
+        state.onCallbackFired(surfaceContainer.width, surfaceContainer.height)
+        val surface = surfaceContainer.surface ?: run {
+            state.onSurfaceFailure("host offered a container with no Surface")
+            return
+        }
         val carContext = session.carContext
 
         // A host may offer a surface again without having taken the last one
@@ -78,6 +85,7 @@ class CarSurface(
             // from, not one we crash on: the templated two-line screen is a
             // complete answer on its own.
             Log.w(TAG, "no virtual display for the car surface: ${failure.message}")
+            state.onSurfaceFailure("${failure.javaClass.simpleName}: ${failure.message}")
             return
         }
         display = created
@@ -139,6 +147,7 @@ class CarSurface(
             .onSuccess { state.onLive(true) }
             .onFailure { failure ->
                 Log.w(TAG, "the car presentation would not show: ${failure.message}")
+                state.onSurfaceFailure("${failure.javaClass.simpleName}: ${failure.message}")
                 release()
             }
     }

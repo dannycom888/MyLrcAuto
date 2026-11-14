@@ -122,6 +122,20 @@
     <string name="settings_renderdiag_started">大屏在前台</string>
     <string name="settings_renderdiag_api">车机 API 级别</string>
     <string name="settings_renderdiag_error">回退原因</string>
+    <string name="settings_renderdiag_callback_registered">表面回调已注册</string>
+    <string name="settings_renderdiag_callback_fired">主机已给表面</string>
+    <string name="settings_renderdiag_container">表面尺寸</string>
+    <string name="settings_renderdiag_blocked">表面未启用原因</string>
+    <string name="settings_renderdiag_blocked_active">表面使用中</string>
+    <string name="settings_renderdiag_blocked_api">车机版本太低</string>
+    <string name="settings_renderdiag_blocked_not_registered">回调未注册</string>
+    <string name="settings_renderdiag_blocked_never_offered">主机未给表面</string>
+    <string name="settings_renderdiag_blocked_offer_failed">表面启动失败</string>
+    <string name="settings_renderdiag_blocked_offer_ended">表面已被收回</string>
+    <string name="settings_renderdiag_blocked_not_foreground">大屏不在前台</string>
+    <string name="settings_renderdiag_blocked_area_empty">可见区域为空</string>
+    <string name="settings_renderdiag_blocked_too_narrow">分屏太窄</string>
+    <string name="settings_renderdiag_blocked_unknown">未知</string>
 
     <string name="car_silent">没有在放歌</string>
     <string name="car_silent_body">在 Poweramp 里放一首歌，歌词就会显示在这里。</string>

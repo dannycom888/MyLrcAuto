@@ -4,9 +4,11 @@ import com.dannycom888.mylrcauto.car.CarGlance
 import com.dannycom888.mylrcauto.car.CarGlanceKind
 import com.dannycom888.mylrcauto.car.CarPaneKind
 import com.dannycom888.mylrcauto.car.CarRenderRecord
+import com.dannycom888.mylrcauto.car.CarSurfaceBlock
 import com.dannycom888.mylrcauto.car.carPaneKind
 import com.dannycom888.mylrcauto.car.carRenderRecord
 import com.dannycom888.mylrcauto.car.carRenderRecordFromPrefsMap
+import com.dannycom888.mylrcauto.car.carSurfaceBlock
 import com.dannycom888.mylrcauto.car.kind
 import com.dannycom888.mylrcauto.car.sameRenderAs
 import com.dannycom888.mylrcauto.car.toPrefsMap
@@ -194,5 +196,141 @@ class CarRenderDiagnosticsTest {
         val values2 = record().toPrefsMap().toMutableMap()
         values2["glance"] = "TELEPATHIC"
         assertNull(carRenderRecordFromPrefsMap(values2))
+    }
+
+    // ---- the v1.0.29 surface-block derivation --------------------------------
+    //
+    // The 2026-11-13 19:07 record — lyrics pane up, 37 lines, screen
+    // in the foreground, API 8, surface never connected, fallback
+    // cause EMPTY — was undecidable because "not live" hid every
+    // step of the surface path. Each step is a value now.
+
+    private fun block(
+        pane: CarPaneKind = CarPaneKind.LYRICS,
+        surfaceLive: Boolean = false,
+        surfaceWidthDp: Float? = null,
+        visibleAreaEmpty: Boolean = false,
+        screenStarted: Boolean = true,
+        apiLevel: Int = 8,
+        callbackRegistered: Boolean = true,
+        callbackFired: Boolean = false,
+        surfaceFailure: String? = null,
+    ) = carSurfaceBlock(
+        pane = pane,
+        surfaceLive = surfaceLive,
+        surfaceWidthDp = surfaceWidthDp,
+        visibleAreaEmpty = visibleAreaEmpty,
+        screenStarted = screenStarted,
+        apiLevel = apiLevel,
+        callbackRegistered = callbackRegistered,
+        callbackFired = callbackFired,
+        surfaceFailure = surfaceFailure,
+    )
+
+    @Test
+    fun theSurfacePaneIsActive() {
+        assertEquals(CarSurfaceBlock.ACTIVE, block(pane = CarPaneKind.ON_SURFACE))
+    }
+
+    @Test
+    fun the1907ShapeWithNoRegistrationIsNotRegistered() {
+        // The v1.0.28 record's own facts, had they been recorded:
+        // a FINISH-created session had no callback at all.
+        assertEquals(
+            CarSurfaceBlock.NOT_REGISTERED,
+            block(callbackRegistered = false, callbackFired = false),
+        )
+    }
+
+    @Test
+    fun registeredButNeverAnsweredIsNeverOffered() {
+        // The decisive v1.0.29 question: if registration now
+        // happens at creation AND the surface template itself is
+        // presented as the ask, this value is what proves the host
+        // is withholding the surface from this session shape.
+        assertEquals(
+            CarSurfaceBlock.NEVER_OFFERED,
+            block(callbackRegistered = true, callbackFired = false),
+        )
+    }
+
+    @Test
+    fun anOfferThatFailedOnOurSideIsOfferFailed() {
+        assertEquals(
+            CarSurfaceBlock.OFFER_FAILED,
+            block(
+                callbackFired = true,
+                surfaceFailure = "IllegalStateException: no display",
+            ),
+        )
+    }
+
+    @Test
+    fun anOfferTakenBackIsOfferEnded() {
+        assertEquals(
+            CarSurfaceBlock.OFFER_ENDED,
+            block(callbackFired = true, surfaceFailure = null),
+        )
+    }
+
+    @Test
+    fun aLiveSurfaceBehindACoveredScreenIsNotForeground() {
+        assertEquals(
+            CarSurfaceBlock.NOT_FOREGROUND,
+            block(surfaceLive = true, screenStarted = false, surfaceWidthDp = 1280f),
+        )
+    }
+
+    @Test
+    fun aLiveSurfaceWithAnEmptyAreaIsAreaEmpty() {
+        assertEquals(
+            CarSurfaceBlock.AREA_EMPTY,
+            block(surfaceLive = true, visibleAreaEmpty = true, surfaceWidthDp = 1280f),
+        )
+    }
+
+    @Test
+    fun aLiveNarrowSurfaceIsTooNarrow() {
+        assertEquals(
+            CarSurfaceBlock.TOO_NARROW,
+            block(surfaceLive = true, surfaceWidthDp = 400f),
+        )
+    }
+
+    @Test
+    fun aLowApiHostIsApiTooLow() {
+        assertEquals(
+            CarSurfaceBlock.API_TOO_LOW,
+            block(apiLevel = 6, callbackRegistered = false),
+        )
+    }
+
+    @Test
+    fun theFactoryDerivesTheBlockAndKeepsTheOfferFacts() {
+        val r = carRenderRecord(
+            timestampMs = 1_763_000_000_000L,
+            onSurface = false,
+            glance = now,
+            lineCount = 37,
+            surfaceLive = false,
+            surfaceWidthDp = null,
+            visibleAreaReported = false,
+            visibleAreaEmpty = false,
+            screenStarted = true,
+            apiLevel = 8,
+            error = null,
+            surfaceCallbackRegistered = true,
+            surfaceCallbackFired = true,
+            surfaceContainerWidthPx = 2000,
+            surfaceContainerHeightPx = 1200,
+            surfaceFailure = "IllegalStateException: " + "x".repeat(500),
+        )
+        assertEquals(CarSurfaceBlock.OFFER_FAILED, r.surfaceBlock)
+        assertEquals(2000, r.surfaceContainerWidthPx)
+        assertEquals(1200, r.surfaceContainerHeightPx)
+        // The failure text truncates like the error message does.
+        assertEquals(160, r.surfaceFailure?.length)
+        // And the whole record, offer facts included, round-trips.
+        assertEquals(r, carRenderRecordFromPrefsMap(r.toPrefsMap()))
     }
 }
