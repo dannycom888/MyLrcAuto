@@ -761,14 +761,15 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             )
         }
 
-        // Diagnostics visibility (v1.0.30): one switch for the two
-        // diagnostics blocks below （歌词查找 and 大屏显示）. DISPLAY
-        // ONLY — the launch log, the render record and the
-        // last-error record are all written whether or not these
-        // blocks are composed, so flipping this on after something
-        // went wrong on the car still shows what was captured
-        // while it was off. Hidden by default: Settings stays
-        // short for a user who never needs the evidence.
+        // Diagnostics visibility (v1.0.30, completed in v1.0.31):
+        // one switch for the diagnostics blocks below （歌词查找、
+        // 上次在车上打开 and 大屏显示）. DISPLAY ONLY — the launch
+        // log, the render record and the last-error record are all
+        // written whether or not these blocks are composed, so
+        // flipping this on after something went wrong on the car
+        // still shows what was captured while it was off. Hidden by
+        // default: Settings stays short for a user who never needs
+        // the evidence.
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(
@@ -806,13 +807,18 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             LyricsDiagnosticsSection(lyricsIndexDiag, lastLookup)
         }
 
-        // Last car launch (item-7 diagnostics): what the head unit
-        // sent for the most recent tap — icon or card — and what
-        // the launch decision did with it. Sits just above the
-        // version, at the bottom of the scrollable list.
-        Spacer(modifier = Modifier.height(24.dp))
+        if (settings.diagnosticsVisible) {
+            // Last car launch (item-7 diagnostics): what the head
+            // unit sent for the most recent tap — icon or card —
+            // and what the launch decision did with it. Gated by
+            // the same switch as the other two diagnostics blocks
+            // (v1.0.31: v1.0.30 gated 歌词查找 and 大屏显示 but
+            // missed this one, so flipping 诊断 off still left the
+            // launch block on screen — the user's screenshot).
+            Spacer(modifier = Modifier.height(24.dp))
 
-        LaunchDiagnosticsSection(lastLaunch)
+            LaunchDiagnosticsSection(lastLaunch)
+        }
 
         if (settings.diagnosticsVisible) {
             // Big screen render (v1.0.27 diagnostics): which pane the
