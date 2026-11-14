@@ -2,6 +2,7 @@ package com.dannycom888.mylrcauto.media
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
 import android.os.Bundle
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
@@ -111,6 +112,27 @@ import kotlin.jvm.Volatile
  * spammed; the playback state is set on every render. A render that
  * throws is caught and logged, never allowed to take the service
  * (and with it the card) down.
+ *
+ * Recovery (v1.0.32): publish-on-change has one blind spot — a
+ * host-side teardown that kills neither the process, nor this
+ * service, nor the projection (the 2026-11-13 20:55 run: the
+ * host's error screen flashed once, the big screen recovered
+ * through a new car session, and the taskbar widget stayed
+ * empty for the rest of the drive, because with the same track
+ * and the same lyric line the metadata was never re-sent and
+ * `isActive` was never set again). So a start intent carrying
+ * [MIRROR_REPUBLISH_ACTION] — sent at car-session start, see
+ * [MirrorServiceControl.republish] — lands in [onStartCommand]
+ * and forces one full re-publish through the normal path:
+ * [forceRepublish] forgets the remembered signature (the
+ * metadata, subtitle included, goes out again), the render
+ * re-sends the playback state, and the session is re-activated
+ * if a track is loaded. The event is recorded for Settings
+ * ([MirrorRepublishReason]), so the next car run can confirm
+ * the recovery actually fired. A fresh start records it too
+ * ([MirrorRepublishReason.SERVICE_START] in [onCreate]): a
+ * restarted service's first publish was always complete — the
+ * record just makes that shape of recovery visible as well.
  */
 class LyricsMediaService : MediaBrowserServiceCompat() {
 
@@ -162,6 +184,13 @@ class LyricsMediaService : MediaBrowserServiceCompat() {
         if (shouldActivateMirror(sessionActive, firstSnapshot)) {
             runCatching { renderCurrent(container) }
                 .onFailure { Log.w(TAG, "initial mirror publish failed, the render loop will retry", it) }
+                // A (re)started service's first publish is a full
+                // one — record it as such (v1.0.32), so a recovery
+                // that arrived by restart is as visible in Settings
+                // as one that arrived by the re-publish trigger.
+                .onSuccess {
+                    container.recordMirrorRepublish(MirrorRepublishReason.SERVICE_START)
+                }
         } else {
             Log.i(
                 TAG,
@@ -204,6 +233,62 @@ class LyricsMediaService : MediaBrowserServiceCompat() {
         runCatching { mediaSession.release() }
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         super.onDestroy()
+    }
+
+    /**
+     * A start delivered to the already-running service — the one
+     * door a plain start could never use (v1.0.32).
+     *
+     * Every start this service ever got was either its creation
+     * or a no-op: the tracker, the snapshot hook and the car app
+     * all start it with a plain intent, and before this override
+     * nothing here answered one. An intent carrying
+     * [MIRROR_REPUBLISH_ACTION] is different — it is the
+     * car-session-start trigger ([MirrorServiceControl.republish])
+     * asking for a full re-publish after a host-side teardown,
+     * and it is answered by [forceRepublish]. Plain starts stay
+     * no-ops, so the tracker's keep-alive re-starts cannot turn
+     * into metadata spam. Guarded: a failed re-publish is logged
+     * and left to the render loop, never allowed to take the
+     * service down.
+     */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (isMirrorRepublishAction(intent?.action)) {
+            runCatching { forceRepublish(MirrorRepublishReason.CAR_SESSION_START) }
+                .onFailure { Log.w(TAG, "mirror re-publish failed", it) }
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    /**
+     * One full re-publish of the current track, on demand.
+     *
+     * Forgetting the remembered signature is the whole force:
+     * the next render goes through the one normal publish path
+     * ([publishMirrorState]), which re-sends the metadata —
+     * title, cover, and the subtitle that is the current lyric
+     * line — because it no longer matches "what is published",
+     * and re-sends the playback state as it always does. The
+     * activation edge in [render] only fires while the session
+     * has never gone active, so the flag is set again here
+     * explicitly when a track is loaded: re-asserting an active
+     * session is a no-op for a host that still has it, and the
+     * recovery for a host that dropped it. The event is
+     * recorded only after the publish has actually run, so the
+     * Settings row is proof, not intention.
+     */
+    private fun forceRepublish(reason: MirrorRepublishReason) {
+        val container = (applicationContext as MyLrcAutoApp).container
+        val snapshot = container.media.snapshot.value
+        lastSignature = null
+        renderCurrent(container)
+        if (snapshot.hasTrack) {
+            mediaSession.isActive = true
+            sessionActive = true
+            isSessionActive = true
+        }
+        container.recordMirrorRepublish(reason)
+        Log.i(TAG, "mirror re-published in full: $reason hasTrack=${snapshot.hasTrack}")
     }
 
     /**

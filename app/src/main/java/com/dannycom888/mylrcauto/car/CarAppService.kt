@@ -55,6 +55,15 @@ class CarAppService : androidx.car.app.CarAppService() {
         // does the same when it is created; the two call sites cannot
         // double-start a running service.
         //
+        // The re-publish rides along (v1.0.32): a session starting
+        // is the moment the host (re)reads the world, and if its
+        // last teardown was host-side only — the 2026-11-13 20:55
+        // error-screen flash, after which the big screen recovered
+        // but the taskbar widget never showed the song again — the
+        // running mirror needs to put its metadata back and
+        // re-assert its session, which a plain start delivered to
+        // a running service never did. See MirrorRepublish.
+        //
         // Guarded: session creation must never throw — a throw here
         // takes the whole car app down at the moment the car opens
         // it, and a mirror that fails to start is not worth that.
@@ -64,6 +73,7 @@ class CarAppService : androidx.car.app.CarAppService() {
         runCatching {
             startMirrorFromCarApp(app.container.media.snapshot.value) {
                 MirrorServiceControl.start(applicationContext)
+                MirrorServiceControl.republish(applicationContext)
             }
         }.onFailure {
             app.container.recordCarError(CarErrorSite.ON_CREATE_SESSION, it)

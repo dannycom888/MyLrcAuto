@@ -201,6 +201,41 @@ object MirrorServiceControl {
         }.onFailure { Log.w(TAG, "could not stop mirror media service", it) }
     }
 
+    /**
+     * Ask the mirror to re-publish itself in full (v1.0.32).
+     *
+     * Same start machinery as [start] — plain start first, the
+     * foreground start as fallback — but the intent carries
+     * [MIRROR_REPUBLISH_ACTION], and that action is the whole
+     * point: delivered to a RUNNING service it lands in
+     * `onStartCommand`, which answers with a full re-publish
+     * (metadata re-sent, session re-activated). A plain [start]
+     * delivered to a running service changes nothing in it —
+     * which is exactly the hole the 2026-11-13 20:55 car run
+     * fell through: the host tore its media state down while
+     * the service stayed up, and no start could put the
+     * taskbar widget's song back. Delivered to a stopped
+     * service it simply starts it, whose first publish is a
+     * full one anyway. Sent at car-session start, next to the
+     * existing [start] call — a trigger, never a loop.
+     */
+    fun republish(context: Context) {
+        fun intent() = Intent(context, LyricsMediaService::class.java)
+            .setAction(MIRROR_REPUBLISH_ACTION)
+        when (
+            startMirrorWithFallback(
+                startService = { context.startService(intent()) },
+                startForegroundService = { context.startForegroundService(intent()) },
+            )
+        ) {
+            MirrorStartResult.STARTED -> Unit
+            MirrorStartResult.STARTED_FOREGROUND ->
+                Log.i(TAG, "mirror re-publish delivered via a foreground start")
+            MirrorStartResult.FAILED ->
+                Log.w(TAG, "could not deliver the mirror re-publish")
+        }
+    }
+
     private const val TAG = "MirrorServiceControl"
 }
 

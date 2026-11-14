@@ -125,6 +125,9 @@
     <string name="settings_renderdiag_api">车机 API 级别</string>
     <string name="settings_renderdiag_error">回退原因</string>
     <string name="settings_renderdiag_last_error">上次异常</string>
+    <string name="settings_renderdiag_mirror_republish">镜像重发</string>
+    <string name="settings_renderdiag_republish_car_session">打开车机应用时</string>
+    <string name="settings_renderdiag_republish_service_start">服务启动时</string>
     <string name="settings_renderdiag_callback_registered">表面回调已注册</string>
     <string name="settings_renderdiag_callback_fired">主机已给表面</string>
     <string name="settings_renderdiag_container">表面尺寸</string>

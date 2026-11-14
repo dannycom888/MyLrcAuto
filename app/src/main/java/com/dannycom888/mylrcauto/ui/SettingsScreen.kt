@@ -66,6 +66,9 @@ import com.dannycom888.mylrcauto.lyrics.LyricsDiagLabel
 import com.dannycom888.mylrcauto.lyrics.LyricsIndexDiag
 import com.dannycom888.mylrcauto.lyrics.LyricsIndexState
 import com.dannycom888.mylrcauto.lyrics.lyricsDiagRows
+import com.dannycom888.mylrcauto.media.MirrorRepublishRecord
+import com.dannycom888.mylrcauto.media.MirrorRepublishReason
+import com.dannycom888.mylrcauto.media.formatMirrorRepublish
 import com.dannycom888.mylrcauto.settings.AppLanguage
 import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import com.dannycom888.mylrcauto.settings.SettingsStore
@@ -224,12 +227,15 @@ private fun LaunchDiagnosticsSection(record: LaunchRecord?) {
  * the three title-and-artist-only shapes a broken big screen can
  * be — screenshot it after a car run that looks wrong. The final
  * row is the sticky last entry-path error (v1.0.30): it survives
- * the healthy renders that overwrite everything above it.
+ * the healthy renders that overwrite everything above it. Below
+ * it, the last full mirror re-publish (v1.0.32): after a
+ * host-side teardown, it is the proof the recovery fired.
  */
 @Composable
 private fun CarRenderDiagnosticsSection(
     record: CarRenderRecord?,
     lastError: CarLastErrorRecord?,
+    mirrorRepublish: MirrorRepublishRecord?,
 ) {
     Text(
         text = stringResource(R.string.settings_renderdiag_title),
@@ -250,6 +256,16 @@ private fun CarRenderDiagnosticsSection(
         if (lastError != null) {
             Spacer(modifier = Modifier.height(4.dp))
             LastErrorRow(lastError)
+        }
+        // Same reasoning as the last-error row above: a mirror
+        // re-publish recorded before any render — a service
+        // restart is exactly that shape — must not be hidden by
+        // the empty state either.
+        if (mirrorRepublish != null) {
+            if (lastError == null) {
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+            MirrorRepublishRow(mirrorRepublish)
         }
         return
     }
@@ -370,6 +386,14 @@ private fun CarRenderDiagnosticsSection(
             none,
         )
     }
+    if (mirrorRepublish != null) {
+        MirrorRepublishRow(mirrorRepublish)
+    } else {
+        DiagRow(
+            stringResource(R.string.settings_renderdiag_mirror_republish),
+            none,
+        )
+    }
 }
 
 /**
@@ -384,6 +408,33 @@ private fun LastErrorRow(lastError: CarLastErrorRecord) {
     DiagRow(
         stringResource(R.string.settings_renderdiag_last_error),
         formatCarLastError(lastError, formatLaunchTimestamp(lastError.timestampMs)),
+    )
+}
+
+/**
+ * The most recent full re-publish of the mirror media session
+ * (v1.0.32): when it happened and what triggered it — a car
+ * session starting, or the mirror service itself restarting.
+ * The taskbar widget's song comes back through that publish
+ * after a host-side teardown, so after a bad run this row is
+ * the check that the recovery actually fired.
+ */
+@Composable
+private fun MirrorRepublishRow(republish: MirrorRepublishRecord) {
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_mirror_republish),
+        formatMirrorRepublish(
+            republish,
+            formatLaunchTimestamp(republish.timestampMs),
+            stringResource(
+                when (republish.reason) {
+                    MirrorRepublishReason.CAR_SESSION_START ->
+                        R.string.settings_renderdiag_republish_car_session
+                    MirrorRepublishReason.SERVICE_START ->
+                        R.string.settings_renderdiag_republish_service_start
+                },
+            ),
+        ),
     )
 }
 
@@ -501,6 +552,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val lastLaunch by container.launchDiagnostics.last.collectAsStateWithLifecycle()
     val lastRender by container.carRenderDiagnostics.last.collectAsStateWithLifecycle()
     val lastCarError by container.carLastError.last.collectAsStateWithLifecycle()
+    val lastMirrorRepublish by container.mirrorRepublish.last.collectAsStateWithLifecycle()
     val lyricsIndexDiag by container.localFolderLyrics.indexDiag.collectAsStateWithLifecycle()
     val lastLookup by container.localFolderLyrics.lastLookup.collectAsStateWithLifecycle()
 
@@ -828,7 +880,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             // ends with the sticky last-error row (v1.0.30).
             Spacer(modifier = Modifier.height(24.dp))
 
-            CarRenderDiagnosticsSection(lastRender, lastCarError)
+            CarRenderDiagnosticsSection(lastRender, lastCarError, lastMirrorRepublish)
         }
 
         // Version, read from the package so it updates every release —

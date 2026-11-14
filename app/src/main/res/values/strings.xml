@@ -125,6 +125,9 @@
     <string name="settings_renderdiag_api">Host API level</string>
     <string name="settings_renderdiag_error">Fallback cause</string>
     <string name="settings_renderdiag_last_error">Last error</string>
+    <string name="settings_renderdiag_mirror_republish">Mirror re-publish</string>
+    <string name="settings_renderdiag_republish_car_session">car session start</string>
+    <string name="settings_renderdiag_republish_service_start">service start</string>
     <string name="settings_renderdiag_callback_registered">Surface callback registered</string>
     <string name="settings_renderdiag_callback_fired">Surface offered by host</string>
     <string name="settings_renderdiag_container">Surface size offered</string>

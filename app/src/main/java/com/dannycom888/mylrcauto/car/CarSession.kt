@@ -255,6 +255,16 @@ class CarSession(
                 app.launchConnectionState.onBigScreenShown()
                 ensureSurfaceCallback(app)
                 ensureBackCallback()
+                // The same mirror re-publish the session-start path
+                // sends (v1.0.32): a card tap landing on a session
+                // that SURVIVED a host-side teardown never passes
+                // through onCreateSession, so this is its one chance
+                // to put the taskbar widget's song back. The FINISH
+                // branch below gets nothing, as before — a launch
+                // that is leaving needs no mirror work.
+                startMirrorFromCarApp(app.media.snapshot.value) {
+                    MirrorServiceControl.republish(carContext.applicationContext)
+                }
             }
 
             LaunchDecision.FINISH_TO_DASHBOARD ->

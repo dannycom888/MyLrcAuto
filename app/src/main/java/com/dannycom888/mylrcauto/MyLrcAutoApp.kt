@@ -17,6 +17,9 @@ import com.dannycom888.mylrcauto.media.MediaSessionRepository
 import com.dannycom888.mylrcauto.media.MirrorAction
 import com.dannycom888.mylrcauto.media.MirrorActivation
 import com.dannycom888.mylrcauto.media.MirrorActivationTracker
+import com.dannycom888.mylrcauto.media.MirrorRepublishRecord
+import com.dannycom888.mylrcauto.media.MirrorRepublishReason
+import com.dannycom888.mylrcauto.media.MirrorRepublishStore
 import com.dannycom888.mylrcauto.media.MirrorServiceControl
 import com.dannycom888.mylrcauto.settings.SettingsStore
 import com.dannycom888.mylrcauto.util.AppLocale
@@ -146,6 +149,33 @@ class MyLrcAutoApp : Application() {
                         timestampMs = System.currentTimeMillis(),
                         site = site,
                         error = error,
+                    ),
+                )
+            }
+        }
+
+        /**
+         * The most recent full re-publish of the mirror media
+         * session, and what triggered it (Settings diagnostics,
+         * v1.0.32 — see MirrorRepublish). After a host-side
+         * teardown this row is how the next car test confirms
+         * the recovery fired.
+         */
+        val mirrorRepublish: MirrorRepublishStore = MirrorRepublishStore(context)
+
+        /**
+         * Records a full mirror re-publish for the Settings
+         * diagnostics AND the log. Guarded like [recordCarError]:
+         * the record is written from the publish path itself, and
+         * recording must never be the thing that breaks it.
+         */
+        fun recordMirrorRepublish(reason: MirrorRepublishReason) {
+            Log.i(TAG, "mirror re-published in full: $reason")
+            runCatching {
+                mirrorRepublish.record(
+                    MirrorRepublishRecord(
+                        timestampMs = System.currentTimeMillis(),
+                        reason = reason,
                     ),
                 )
             }
