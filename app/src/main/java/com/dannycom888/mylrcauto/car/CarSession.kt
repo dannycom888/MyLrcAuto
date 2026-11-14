@@ -74,6 +74,23 @@ class CarSession(
         get() = (carContext.applicationContext as MyLrcAutoApp).container
 
     override fun onCreateScreen(intent: Intent): Screen {
+        // Guarded as a whole (v1.0.30): the pieces inside were
+        // guarded one by one, the body was not — and this callback
+        // is the big screen's front door. A throw escaping it is
+        // exactly what makes the host draw its own error screen
+        // (the 2026-11-13 playlist-switch flash). A failure is
+        // recorded for Settings and answered with the plain screen:
+        // its construction only stores fields, and its template
+        // path has its own guards.
+        return try {
+            createScreen(intent)
+        } catch (e: Exception) {
+            container.recordCarError(CarErrorSite.ON_CREATE_SCREEN, e)
+            CarLyricsScreen(carContext, container, surface)
+        }
+    }
+
+    private fun createScreen(intent: Intent): Screen {
         val app = container
 
         // Item 7 (v1.0.21): decide what this launch is before doing
@@ -104,8 +121,16 @@ class CarSession(
 
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                app.media.refresh()
-                app.media.start()
+                // Guarded (v1.0.30): bringing the watcher up touches
+                // the notification listener and media controllers;
+                // a failure here must cost the watching, not the
+                // session the host is creating around it.
+                runCatching {
+                    app.media.refresh()
+                    app.media.start()
+                }.onFailure {
+                    app.recordCarError(CarErrorSite.SESSION_START, it)
+                }
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
@@ -183,6 +208,16 @@ class CarSession(
     }
 
     override fun onNewIntent(intent: Intent) {
+        // Guarded as a whole (v1.0.30), like onCreateScreen: this
+        // is the callback a card tap lands on — the exact tap in
+        // the 2026-11-13 playlist-switch sequence — and nothing in
+        // it may escape to the host. A failure is recorded and
+        // swallowed: the session keeps whatever screen it had.
+        runCatching { handleNewIntent(intent) }
+            .onFailure { container.recordCarError(CarErrorSite.ON_NEW_INTENT, it) }
+    }
+
+    private fun handleNewIntent(intent: Intent) {
         val app = container
         // The same decision as onCreateScreen, for a session that
         // already exists — the icon tapped again while the app is
@@ -323,7 +358,10 @@ class CarSession(
             override fun handleOnBackPressed() {
                 Log.i(TAG, "back pressed on the big screen; finishing to the dashboard")
                 runCatching { carContext.finishCarApp() }
-                    .onFailure { Log.w(TAG, "finishCarApp on back failed", it) }
+                    .onFailure {
+                        Log.w(TAG, "finishCarApp on back failed", it)
+                        container.recordCarError(CarErrorSite.BACK_PRESSED, it)
+                    }
             }
         }
         runCatching {

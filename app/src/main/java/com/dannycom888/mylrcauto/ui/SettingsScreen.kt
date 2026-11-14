@@ -48,12 +48,14 @@ import android.content.Context
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.car.CarGlanceKind
+import com.dannycom888.mylrcauto.car.CarLastErrorRecord
 import com.dannycom888.mylrcauto.car.CarPaneKind
 import com.dannycom888.mylrcauto.car.CarRenderRecord
 import com.dannycom888.mylrcauto.car.CarSurfaceBlock
 import com.dannycom888.mylrcauto.car.LaunchDecision
 import com.dannycom888.mylrcauto.car.LaunchEntry
 import com.dannycom888.mylrcauto.car.LaunchRecord
+import com.dannycom888.mylrcauto.car.formatCarLastError
 import com.dannycom888.mylrcauto.car.formatLaunchTimestamp
 import com.dannycom888.mylrcauto.lyrics.DiagValue
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
@@ -220,10 +222,15 @@ private fun LaunchDiagnosticsSection(record: LaunchRecord?) {
  * the surface facts the choice was made from, and the exception
  * when the fallback fired. This is the evidence that separates
  * the three title-and-artist-only shapes a broken big screen can
- * be — screenshot it after a car run that looks wrong.
+ * be — screenshot it after a car run that looks wrong. The final
+ * row is the sticky last entry-path error (v1.0.30): it survives
+ * the healthy renders that overwrite everything above it.
  */
 @Composable
-private fun CarRenderDiagnosticsSection(record: CarRenderRecord?) {
+private fun CarRenderDiagnosticsSection(
+    record: CarRenderRecord?,
+    lastError: CarLastErrorRecord?,
+) {
     Text(
         text = stringResource(R.string.settings_renderdiag_title),
         style = MaterialTheme.typography.titleMedium,
@@ -236,6 +243,14 @@ private fun CarRenderDiagnosticsSection(record: CarRenderRecord?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 2.dp),
         )
+        // The last-error row shows even with no render record:
+        // it is sticky across process restarts, and a failure
+        // that killed the process before any render is exactly
+        // the one that must not be hidden by the empty state.
+        if (lastError != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            LastErrorRow(lastError)
+        }
         return
     }
     val none = stringResource(R.string.settings_diag_empty_value)
@@ -346,6 +361,29 @@ private fun CarRenderDiagnosticsSection(record: CarRenderRecord?) {
             record.errorMessage == null -> record.errorClass
             else -> "${record.errorClass}: ${record.errorMessage}"
         },
+    )
+    if (lastError != null) {
+        LastErrorRow(lastError)
+    } else {
+        DiagRow(
+            stringResource(R.string.settings_renderdiag_last_error),
+            none,
+        )
+    }
+}
+
+/**
+ * The sticky last car entry-path error (v1.0.30): time, callback
+ * site, exception. Unlike the render record above it — which the
+ * next healthy render overwrites — this one survives success and
+ * process restarts, so the transient failure that flashed the
+ * host's error screen and recovered leaves its name here.
+ */
+@Composable
+private fun LastErrorRow(lastError: CarLastErrorRecord) {
+    DiagRow(
+        stringResource(R.string.settings_renderdiag_last_error),
+        formatCarLastError(lastError, formatLaunchTimestamp(lastError.timestampMs)),
     )
 }
 
@@ -462,6 +500,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val settings by container.settings.settings.collectAsStateWithLifecycle()
     val lastLaunch by container.launchDiagnostics.last.collectAsStateWithLifecycle()
     val lastRender by container.carRenderDiagnostics.last.collectAsStateWithLifecycle()
+    val lastCarError by container.carLastError.last.collectAsStateWithLifecycle()
     val lyricsIndexDiag by container.localFolderLyrics.indexDiag.collectAsStateWithLifecycle()
     val lastLookup by container.localFolderLyrics.lastLookup.collectAsStateWithLifecycle()
 
@@ -722,12 +761,50 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             )
         }
 
-        // Lyrics lookup diagnostics (v1.0.22): the index state and
-        // the last lookup's inputs + step-by-step outcome — the
-        // evidence that says WHY a song shows no lyrics.
-        Spacer(modifier = Modifier.height(24.dp))
+        // Diagnostics visibility (v1.0.30): one switch for the two
+        // diagnostics blocks below （歌词查找 and 大屏显示）. DISPLAY
+        // ONLY — the launch log, the render record and the
+        // last-error record are all written whether or not these
+        // blocks are composed, so flipping this on after something
+        // went wrong on the car still shows what was captured
+        // while it was off. Hidden by default: Settings stays
+        // short for a user who never needs the evidence.
+        Spacer(modifier = Modifier.height(16.dp))
 
-        LyricsDiagnosticsSection(lyricsIndexDiag, lastLookup)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    container.settings.setDiagnosticsVisible(!settings.diagnosticsVisible)
+                }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_diagnostics_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(R.string.settings_diagnostics_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = settings.diagnosticsVisible,
+                onCheckedChange = { container.settings.setDiagnosticsVisible(it) },
+            )
+        }
+
+        if (settings.diagnosticsVisible) {
+            // Lyrics lookup diagnostics (v1.0.22): the index state and
+            // the last lookup's inputs + step-by-step outcome — the
+            // evidence that says WHY a song shows no lyrics.
+            Spacer(modifier = Modifier.height(24.dp))
+
+            LyricsDiagnosticsSection(lyricsIndexDiag, lastLookup)
+        }
 
         // Last car launch (item-7 diagnostics): what the head unit
         // sent for the most recent tap — icon or card — and what
@@ -737,13 +814,16 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
 
         LaunchDiagnosticsSection(lastLaunch)
 
-        // Big screen render (v1.0.27 diagnostics): which pane the
-        // car screen last returned, what the lyrics side had, and
-        // the exception when it fell back — the evidence for a big
-        // screen that shows only the title and artist.
-        Spacer(modifier = Modifier.height(24.dp))
+        if (settings.diagnosticsVisible) {
+            // Big screen render (v1.0.27 diagnostics): which pane the
+            // car screen last returned, what the lyrics side had, and
+            // the exception when it fell back — the evidence for a big
+            // screen that shows only the title and artist. The section
+            // ends with the sticky last-error row (v1.0.30).
+            Spacer(modifier = Modifier.height(24.dp))
 
-        CarRenderDiagnosticsSection(lastRender)
+            CarRenderDiagnosticsSection(lastRender, lastCarError)
+        }
 
         // Version, read from the package so it updates every release —
         // and the about line below it. Both sit at the bottom of a

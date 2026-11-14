@@ -2,12 +2,14 @@ package com.dannycom888.mylrcauto.car
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.util.Log
 import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator
 import com.dannycom888.mylrcauto.MyLrcAutoApp
 import com.dannycom888.mylrcauto.media.LyricsMediaService
 import com.dannycom888.mylrcauto.media.MirrorServiceControl
 import com.dannycom888.mylrcauto.util.AppLocale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The Android Auto entry point.
@@ -63,8 +65,58 @@ class CarAppService : androidx.car.app.CarAppService() {
             startMirrorFromCarApp(app.container.media.snapshot.value) {
                 MirrorServiceControl.start(applicationContext)
             }
+        }.onFailure {
+            app.container.recordCarError(CarErrorSite.ON_CREATE_SESSION, it)
         }
-        return CarSession(mirrorAlreadyActive)
+        installUncaughtErrorRecorder(app)
+        // The session object itself: construction is a saved-state
+        // restore over nothing, which has no realistic failure —
+        // but if it ever did throw there is no fallback session to
+        // return, so the failure is recorded (v1.0.30) and rethrown:
+        // the record is what the next Settings screenshot reads.
+        return try {
+            CarSession(mirrorAlreadyActive)
+        } catch (e: Exception) {
+            app.container.recordCarError(CarErrorSite.ON_CREATE_SESSION, e)
+            throw e
+        }
+    }
+
+    /**
+     * Installs (once) a default uncaught-exception handler that
+     * records the failure into the sticky last-error diagnostics
+     * and then delegates to the handler it replaced (v1.0.30).
+     *
+     * Why: the 2026-11-13 playlist-switch flash — the host's
+     * error screen on big-screen entry, recovering on its own —
+     * is the shape of a process death, and a process death erases
+     * every in-memory trace; the render record written after the
+     * restart described only the recovery （回退原因 （无）). A
+     * handler that writes the record synchronously before the
+     * process goes down is the one instrument that survives it.
+     * Crash behaviour itself is unchanged: the record is written
+     * behind a guard, and the previous handler always runs.
+     */
+    private fun installUncaughtErrorRecorder(app: MyLrcAutoApp) {
+        if (!uncaughtRecorderInstalled.compareAndSet(false, true)) return
+        val store = app.container.carLastError
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                store.record(
+                    carLastErrorRecord(
+                        timestampMs = System.currentTimeMillis(),
+                        site = CarErrorSite.UNCAUGHT,
+                        error = error,
+                    ),
+                )
+            }
+            if (previous != null) {
+                previous.uncaughtException(thread, error)
+            } else {
+                Log.e(TAG, "uncaught exception on thread ${thread.name}", error)
+            }
+        }
     }
 
     /**
@@ -85,4 +137,11 @@ class CarAppService : androidx.car.app.CarAppService() {
                 .addAllowedHosts(androidx.car.app.R.array.hosts_allowlist_sample)
                 .build()
         }
+
+    private companion object {
+        const val TAG = "MyLrcAutoCarService"
+
+        /** Whether the uncaught-exception recorder has been installed (once per process). */
+        val uncaughtRecorderInstalled = AtomicBoolean(false)
+    }
 }

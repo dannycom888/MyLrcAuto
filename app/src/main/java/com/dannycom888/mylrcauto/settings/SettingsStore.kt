@@ -17,6 +17,14 @@ data class Settings(
     val lyricsFont: LyricsFontChoice = SettingsStore.DEFAULT_LYRICS_FONT,
     /** Keep the phone screen on while the lyrics screen is showing. */
     val keepScreenOn: Boolean = false,
+    /**
+     * Whether Settings shows its diagnostics blocks （歌词查找 /
+     * 大屏显示）. Display only, default off: every diagnostic keeps
+     * being RECORDED either way (launch log, render record,
+     * last-error record), so turning this on after an incident
+     * still shows what was captured while it was off (v1.0.30).
+     */
+    val diagnosticsVisible: Boolean = SettingsStore.DEFAULT_DIAGNOSTICS_VISIBLE,
 )
 
 /**
@@ -53,6 +61,10 @@ class SettingsStore(context: Context) {
             ),
             lyricsFont = lyricsFont,
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
+            diagnosticsVisible = prefs.getBoolean(
+                KEY_DIAGNOSTICS_VISIBLE,
+                DEFAULT_DIAGNOSTICS_VISIBLE,
+            ),
         )
     }
 
@@ -78,6 +90,11 @@ class SettingsStore(context: Context) {
         _settings.value = current.copy(keepScreenOn = enabled)
     }
 
+    fun setDiagnosticsVisible(visible: Boolean) {
+        prefs.edit().putBoolean(KEY_DIAGNOSTICS_VISIBLE, visible).apply()
+        _settings.value = current.copy(diagnosticsVisible = visible)
+    }
+
     fun setLyricsFont(choice: LyricsFontChoice) {
         prefs.edit().putString(KEY_LYRICS_FONT, choice.name).apply()
         _settings.value = current.copy(lyricsFont = choice)
@@ -90,6 +107,10 @@ class SettingsStore(context: Context) {
         const val KEY_LYRICS_FONT_SIZE_SP = "lyrics_font_size_sp"
         const val KEY_LYRICS_FONT = "lyrics_font"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_DIAGNOSTICS_VISIBLE = "diagnostics_visible"
+
+        /** Diagnostics blocks are hidden until asked for: a fresh install's Settings stays short. */
+        const val DEFAULT_DIAGNOSTICS_VISIBLE = false
 
         /** Lyrics size slider range: 14–32 sp, default 17 sp (the original hardcoded size). */
         const val MIN_LYRICS_FONT_SIZE_SP = 14

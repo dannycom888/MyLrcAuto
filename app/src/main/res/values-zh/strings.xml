@@ -39,6 +39,8 @@
     <string name="settings_font_original">系统自带</string>
     <string name="settings_font_bauhaus">楷书</string>
     <string name="settings_keep_screen_on_title">保持屏幕常亮</string>
+    <string name="settings_diagnostics_title">诊断</string>
+    <string name="settings_diagnostics_summary">显示下面的歌词查找和大屏显示诊断。隐藏时仍会照常记录。</string>
     <string name="settings_keep_screen_on_summary">显示歌词时，屏幕不会自动熄灭。</string>
     <string name="settings_about">MyLRC Auto——只读本地歌词，不联网。</string>
     <string name="settings_version">版本 %1$s</string>
@@ -122,6 +124,7 @@
     <string name="settings_renderdiag_started">大屏在前台</string>
     <string name="settings_renderdiag_api">车机 API 级别</string>
     <string name="settings_renderdiag_error">回退原因</string>
+    <string name="settings_renderdiag_last_error">上次异常</string>
     <string name="settings_renderdiag_callback_registered">表面回调已注册</string>
     <string name="settings_renderdiag_callback_fired">主机已给表面</string>
     <string name="settings_renderdiag_container">表面尺寸</string>

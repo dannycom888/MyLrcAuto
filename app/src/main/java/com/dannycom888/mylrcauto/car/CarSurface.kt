@@ -102,58 +102,86 @@ class CarSurface(
             { container.media.snapshot.value.playback.currentMs() }
         val onSeek: (Long) -> Unit = { container.media.seekTo(it) }
 
-        val view = ComposeView(carContext).apply {
-            setViewTreeLifecycleOwner(session)
-            setViewTreeSavedStateRegistryOwner(session)
-            setContent {
-                // The app's dark theme + a Surface: without them the content
-                // falls back to the default light scheme, so lyric lines
-                // render black-on-black on the dark car background.
-                MyLrcAutoTheme {
-                    Surface(
-                        modifier = androidx.compose.ui.Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background,
-                    ) {
-                        // The content gets the surface itself, not a
-                        // pre-padded modifier: CarLyricsContent lays the
-                        // lyrics out inside the host's visible area, and
-                        // draws the background and the small cover below
-                        // the pane on the full surface — the surface is
-                        // bigger than the visible area (its left edge is
-                        // where the pane column ends), and the pane column
-                        // below the pane box is drawable (see
-                        // belowPaneCoverPlacement).
-                        CarLyricsContent(
-                            container = container,
-                            positionMsProvider = positionMsProvider,
-                            onSeek = onSeek,
-                            surfaceState = state,
-                            surfaceWidthPx = width,
-                            surfaceHeightPx = height,
-                            density = dpi / 160f,
-                        )
+        // Everything from here to the presentation standing up is
+        // ONE guarded stretch (v1.0.30). It was not: the virtual
+        // display's creation and show() had guards, but building
+        // the ComposeView and — critically — the Presentation
+        // constructor between them did not. A container replaced
+        // mid-flight (the template flipping pane → surface while a
+        // player switch churns the session — the 2026-11-13
+        // playlist-switch sequence) is exactly when the display can
+        // be invalid by the time the Presentation is built over it,
+        // and the constructor's InvalidDisplayException is a
+        // RuntimeException: escaping a SurfaceCallback on the main
+        // thread, it kills the process — and a dead process is what
+        // makes the host draw its own error screen. A failure now
+        // costs the surface (the fallback pane keeps the words),
+        // is recorded for Settings, and never leaves this callback.
+        val stood = runCatching {
+            val view = ComposeView(carContext).apply {
+                setViewTreeLifecycleOwner(session)
+                setViewTreeSavedStateRegistryOwner(session)
+                setContent {
+                    // The app's dark theme + a Surface: without them
+                    // the content falls back to the default light
+                    // scheme, so lyric lines render black-on-black on
+                    // the dark car background.
+                    MyLrcAutoTheme {
+                        Surface(
+                            modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background,
+                        ) {
+                            // The content gets the surface itself, not a
+                            // pre-padded modifier: CarLyricsContent lays
+                            // the lyrics out inside the host's visible
+                            // area, and draws the background and the small
+                            // cover below the pane on the full surface —
+                            // the surface is bigger than the visible area
+                            // (its left edge is where the pane column
+                            // ends), and the pane column below the pane
+                            // box is drawable (see
+                            // belowPaneCoverPlacement).
+                            CarLyricsContent(
+                                container = container,
+                                positionMsProvider = positionMsProvider,
+                                onSeek = onSeek,
+                                surfaceState = state,
+                                surfaceWidthPx = width,
+                                surfaceHeightPx = height,
+                                density = dpi / 160f,
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        val shown = Presentation(carContext, created.display).apply { setContentView(view) }
-        presentation = shown
-
-        // Only "live" if there is really something on the screen. Claiming
-        // otherwise would leave the template showing a map with nothing drawn
-        // on it, where the two-line fallback would have been a working screen.
-        runCatching { shown.show() }
-            .onSuccess { state.onLive(true) }
-            .onFailure { failure ->
-                Log.w(TAG, "the car presentation would not show: ${failure.message}")
-                state.onSurfaceFailure("${failure.javaClass.simpleName}: ${failure.message}")
-                release()
+            val shown = Presentation(carContext, created.display).apply {
+                setContentView(view)
             }
+            presentation = shown
+
+            // Only "live" if there is really something on the
+            // screen. Claiming otherwise would leave the template
+            // showing a map with nothing drawn on it, where the
+            // two-line fallback would have been a working screen.
+            shown.show()
+            state.onLive(true)
+        }
+        if (stood.isFailure) {
+            val failure = stood.exceptionOrNull()!!
+            Log.w(TAG, "the car surface could not stand up: ${failure.message}")
+            state.onSurfaceFailure("${failure.javaClass.simpleName}: ${failure.message}")
+            container.recordCarError(CarErrorSite.ON_SURFACE_AVAILABLE, failure)
+            release()
+        }
     }
 
     override fun onVisibleAreaChanged(visibleArea: Rect) {
-        state.onVisibleArea(visibleArea)
+        // Guarded (v1.0.30): a bare state write today, but this is
+        // a host callback on the entry path — nothing in it may
+        // ever escape to the host.
+        runCatching { state.onVisibleArea(visibleArea) }
+            .onFailure { container.recordCarError(CarErrorSite.ON_VISIBLE_AREA_CHANGED, it) }
     }
 
     override fun onStableAreaChanged(stableArea: Rect) {
@@ -164,7 +192,11 @@ class CarSurface(
     }
 
     override fun onSurfaceDestroyed(surfaceContainer: SurfaceContainer) {
-        release()
+        // Guarded (v1.0.30), like onVisibleAreaChanged: release()
+        // is internally guarded already; this is the belt over the
+        // braces, with the record if the braces ever fail.
+        runCatching { release() }
+            .onFailure { container.recordCarError(CarErrorSite.ON_SURFACE_DESTROYED, it) }
     }
 
     /**

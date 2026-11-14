@@ -5,8 +5,10 @@ import android.content.Context
 import android.util.Log
 import androidx.car.app.connection.CarConnection
 import androidx.lifecycle.Observer
+import com.dannycom888.mylrcauto.car.CarLastErrorStore
 import com.dannycom888.mylrcauto.car.CarRenderDiagnosticsStore
 import com.dannycom888.mylrcauto.car.LaunchConnectionState
+import com.dannycom888.mylrcauto.car.carLastErrorRecord
 import com.dannycom888.mylrcauto.car.LaunchDiagnosticsStore
 import com.dannycom888.mylrcauto.lyrics.LocalFolderSource
 import com.dannycom888.mylrcauto.lyrics.LocalLyricsProvider
@@ -116,6 +118,38 @@ class MyLrcAutoApp : Application() {
 
         /** The most recent big-screen render's pane, inputs and fallback cause (Settings diagnostics). */
         val carRenderDiagnostics: CarRenderDiagnosticsStore = CarRenderDiagnosticsStore(context)
+
+        /**
+         * The last exception on a car entry path, sticky across
+         * healthy renders and process restarts (Settings
+         * diagnostics, v1.0.30 — see CarLastError).
+         */
+        val carLastError: CarLastErrorStore = CarLastErrorStore(context)
+
+        /**
+         * Records a car entry-path failure for the Settings
+         * diagnostics AND the log. Guarded end to end and deduped
+         * by the store: recording must never be the thing that
+         * breaks the path it is watching, and a failure repeating
+         * on a tick must not rewrite the same fact forever. Every
+         * guarded catch on the car entry paths (session creation,
+         * screen creation, new intent, template build, surface
+         * callbacks) calls this, so the next transient failure —
+         * the 2026-11-13 playlist-switch error-screen flash above
+         * all — leaves its name behind.
+         */
+        fun recordCarError(site: String, error: Throwable) {
+            Log.w(TAG, "car entry path failed at $site", error)
+            runCatching {
+                carLastError.record(
+                    carLastErrorRecord(
+                        timestampMs = System.currentTimeMillis(),
+                        site = site,
+                        error = error,
+                    ),
+                )
+            }
+        }
 
         val settings: SettingsStore = SettingsStore(context)
 

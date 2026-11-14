@@ -45,6 +45,17 @@ class SettingsTest {
     }
 
     @Test
+    fun diagnosticsHiddenByDefault() {
+        // The diagnostics blocks are display-only and hidden until
+        // asked for (v1.0.30): a fresh install's Settings stays
+        // short, while every diagnostic keeps recording underneath
+        // — so the data class default and the store's fallback
+        // agree on false.
+        assertEquals(false, Settings().diagnosticsVisible)
+        assertEquals(false, SettingsStore.DEFAULT_DIAGNOSTICS_VISIBLE)
+    }
+
+    @Test
     fun lyricsFontDefaultsToBauhaus() {
         // The font choice defaults to Bauhaus, so adding the setting
         // changes nothing for an existing install: Chinese lyrics

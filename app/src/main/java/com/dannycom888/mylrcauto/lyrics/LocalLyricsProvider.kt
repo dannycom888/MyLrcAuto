@@ -233,7 +233,33 @@ class LocalLyricsProvider(
      * exactly the pre-trace lookup: same steps, same order, same
      * results.
      */
+    /**
+     * The lookup runs on the IO dispatcher, never on the caller's
+     * (v1.0.30). The engine's scope is the app's main-thread
+     * scope, and everything except the SAF reads and the folder
+     * walk used to run on it: the matching over the 1,092 + 1,092
+     * indexed names, the trace's probe and closest-name ranking
+     * over all of them, and the parsing of up to
+     * [MAX_FILES_TO_PARSE] files. That is the thread the Car App
+     * Library dispatches template requests and surface callbacks
+     * on — so a burst of lookups (a player switching playlists
+     * churns track changes, and each one fetches) competed with
+     * the big screen's entry for the same thread, in exactly the
+     * window the 2026-11-13 error-screen flash happened in.
+     * Entering the big screen must never wait on lookup work:
+     * the whole lookup now hops here, and its inner IO hops (the
+     * walk, the reads, the cache load) simply stay put.
+     */
     private suspend fun fetch(
+        title: String,
+        artists: List<String>,
+        durationMs: Long,
+        sourcePackage: String,
+    ): LyricsDocument? = withContext(ioDispatcher) {
+        fetchOnIo(title, artists, durationMs, sourcePackage)
+    }
+
+    private suspend fun fetchOnIo(
         title: String,
         artists: List<String>,
         durationMs: Long,

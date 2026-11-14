@@ -133,6 +133,7 @@ class CarLyricsScreen(
                 .collect {
                     val next = runCatching { compose() }.onFailure {
                         Log.w(TAG, "state-driven compose failed, keeping the last template", it)
+                        container.recordCarError(CarErrorSite.COMPOSE_STATE, it)
                     }.getOrNull() ?: return@collect
                     if (shouldInvalidateOnStateChange(next, shown)) invalidate()
                 }
@@ -148,6 +149,7 @@ class CarLyricsScreen(
                     // kill the tick loop (and with it every later redraw).
                     val next = runCatching { compose() }.onFailure {
                         Log.w(TAG, "compose failed, keeping the last template", it)
+                        container.recordCarError(CarErrorSite.COMPOSE_TICK, it)
                     }.getOrNull()
                     val now = System.currentTimeMillis()
                     if (next != null && next != shown && now - lastRedrawAt >= MIN_REDRAW_GAP_MS) {
@@ -188,8 +190,9 @@ class CarLyricsScreen(
             compose()
         } catch (e: Exception) {
             Log.w(TAG, "compose failed, showing the emergency pane instead", e)
+            container.recordCarError(CarErrorSite.ON_GET_TEMPLATE, e)
             recordRender(content = null, error = e)
-            return emergencyPane(content = null)
+            return emergencyPaneGuarded(content = null)
         }
         shown = content
         return try {
@@ -198,9 +201,39 @@ class CarLyricsScreen(
             template
         } catch (e: Exception) {
             Log.w(TAG, "template build failed, showing the emergency pane instead", e)
+            container.recordCarError(CarErrorSite.ON_GET_TEMPLATE, e)
             recordRender(content, error = e)
-            emergencyPane(content)
+            emergencyPaneGuarded(content)
         }
+    }
+
+    /**
+     * [emergencyPane] behind its own guard (v1.0.30): the
+     * fallback was the one unguarded step left in onGetTemplate —
+     * a throw inside the safety net itself would have escaped to
+     * the host exactly like the failure it was sheltering from.
+     * If even the emergency pane cannot be built, the answer is
+     * [minimalPane]: one row, no actions, nothing left to fail
+     * but a string read — and if THAT throws, there is nothing
+     * an app can return anyway.
+     */
+    private fun emergencyPaneGuarded(content: Content?): Template =
+        runCatching { emergencyPane(content) }
+            .onFailure {
+                Log.w(TAG, "the emergency pane itself failed, showing the minimal pane", it)
+                container.recordCarError(CarErrorSite.EMERGENCY_PANE, it)
+            }
+            .getOrElse { minimalPane() }
+
+    /** One row with the app name — the last template that can be built. */
+    private fun minimalPane(): Template {
+        val pane = Pane.Builder()
+            .addRow(Row.Builder().setTitle(carContext.getString(R.string.app_name)).build())
+            .build()
+        return PaneTemplate.Builder(pane)
+            .setTitle(carContext.getString(R.string.app_name))
+            .setHeaderAction(carPaneHeaderAction())
+            .build()
     }
 
     /** The last render record this screen wrote, for change-dedup (see [recordRender]). */
