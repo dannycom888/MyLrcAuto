@@ -6,6 +6,16 @@ Current version: **1.0.32** (versionCode 34). Per-version release notes live on 
 
 This software was made with Muse's assistance.
 
+## Install — start here (the APK is not on the Play Store)
+
+**Download the latest APK:** from the [releases page](https://github.com/dannycom888/MyLrcAuto/releases) — pick the newest release.
+
+1. In Android Auto developer settings, turn on **Unknown sources**, or the app will not appear in the car list.
+2. **Install the APK with [KingInstaller](https://github.com/fcaronte/KingInstaller/releases)** — download KingInstaller from its GitHub Releases page: https://github.com/fcaronte/KingInstaller/releases — it installs as the Play installer, which is what makes Android Auto list the app. Do not install the APK directly.
+3. Open the app and grant **notification access** when asked (so it can see what Poweramp is playing).
+4. Settings → pick the lyrics folder → pick the Music folder → tap Rescan; it should find your `.lrc` files.
+5. Play a song; the full lyrics should appear on both the phone and the car.
+
 ## What's new in 1.0.21
 
 - **Two-tap flow, like the media apps: icon → card, card → big screen**: Poweramp and the other media apps on the user's car all open the small dashboard card first and the big screen only when the card is tapped. They get that for free — the car draws their screens — while this app is a template app, so the car used to hand it the big screen on the first tap. Now an icon tap finishes the car app straight back to the dashboard (map + card), and only a launch judged to come from the card opens the big screen. To make that survivable, the mirror session (which the card is drawn from) is no longer tied to the template session — it is gated on the car connection itself (the CarConnection projection state, the pattern AALyrics uses), so it starts when the car connects, keeps the card alive across icon-tap finishes all drive long, and stops when the car disconnects. With no car connected it never runs, so the wireless Android Auto handshake protection from 1.0.18 is unchanged. **Honest caveat**: the Car App Library gives no signal that tells an icon tap from a card tap — the judgment uses the launch intent's shape (anything beyond a plain launcher intent counts as card-driven) gated on the card already being up, which is a heuristic until the car test confirms what this head unit actually sends. If card taps turn out to arrive exactly like icon taps, they will finish to the dashboard too — which is why the next item exists.
@@ -131,14 +141,6 @@ The big lyrics panel on the car no longer freezes: like the phone, it refreshes 
 - Lyrics size (14–32 sp) and keep-screen-on can be set in Settings; both persist across restarts
 - Icon: deep blue (#051E3C), white M-shaped note above a glowing white car, the note slightly left of the car's centre; the car has round headlights and a smile
 
-## Install (the APK is not on the Play Store)
-
-1. In Android Auto developer settings, turn on **Unknown sources**, or the app will not appear in the car list.
-2. **Install the APK with KingInstaller** (it installs as the Play installer, which is what makes Android Auto list the app). Download KingInstaller from its GitHub Releases page: https://github.com/fcaronte/KingInstaller/releases
-3. Open the app and grant **notification access** when asked (so it can see what Poweramp is playing).
-4. Settings → pick the lyrics folder → pick the Music folder → tap Rescan; it should find 1092 `.lrc` files.
-5. Play a song (for example 《一千年以后》); the full lyrics should appear on both the phone and the car.
-
 ## Build
 
 ```bash
@@ -165,6 +167,16 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 原创 App：只读本地 `.lrc`，跟着 Poweramp 播放，在手机和 Android Auto 车机上显示整首歌词。不联网、不找在线歌词。
 
 本软件由 Muse 协助制作。
+
+## 安装 — 先看这里（APK 不在 Play 商店）
+
+**下载最新版 APK：** 去 [Releases 发布页](https://github.com/dannycom888/MyLrcAuto/releases) 选最新一版。
+
+1. 先在 Android Auto 开发者设置里开 **Unknown sources**，否则车机列表不显示。
+2. **必须用 [KingInstaller](https://github.com/fcaronte/KingInstaller/releases) 安装 APK** — KingInstaller 从它的 GitHub Releases 页下载：https://github.com/fcaronte/KingInstaller/releases — 它以 Play 安装器身份安装，Android Auto 才能认出来。不要直接点 APK 安装。
+3. 打开 App，按提示开“通知访问权限”（用来看 Poweramp 在放什么）。
+4. 设置 → 选歌词文件夹 → 选 Music 文件夹 → 点 Rescan，应扫到你的 `.lrc` 文件。
+5. 放一首歌，手机和车机上都应出整首歌词。
 
 ## v1.0.21 变化
 
@@ -300,14 +312,6 @@ gradle_build :app:assembleRelease    # signed with the shared keystore
 - 中文界面，设置顶部可切换语言（跟随系统 / 中文（简体）/ English），立即生效
 - 设置里可调歌词大小（14–32 sp）和保持屏幕常亮，两个设置都保存、重启保留
 - 图标：深蓝底（#051E3C），白色 M 形音符在上、发光白车在下，音符略偏左、车在中线，两者几乎贴在一起，车有圆眼睛和笑嘴；图形缩小了一圈，离边沿留了空隙
-
-## 安装（APK 不在 Play 商店）
-
-1. 先在 Android Auto 开发者设置里开 Unknown sources，否则车机列表不显示。
-2. 必须用 KingInstaller 安装 APK（以 Play 安装器身份装，Android Auto 才能认出来）。KingInstaller 从它的 GitHub Releases 页下载：https://github.com/fcaronte/KingInstaller/releases
-3. 打开 App，按提示开“通知访问权限”（用来看 Poweramp 在放什么）。
-4. 设置 → 选歌词文件夹 → 选 Music 文件夹 → 点 Rescan，应显示 1092 个 `.lrc`。
-5. 放一首歌（比如《一千年以后》），手机和车机上都应出整首歌词。
 
 ## 构建
 
