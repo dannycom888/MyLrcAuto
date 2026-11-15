@@ -5,8 +5,12 @@ import com.dannycom888.mylrcauto.lyrics.LrcParser
 import com.dannycom888.mylrcauto.lyrics.LyricsDocument
 import com.dannycom888.mylrcauto.lyrics.WordSweep
 import com.dannycom888.mylrcauto.lyrics.WordTiming
+import androidx.compose.ui.graphics.Color
+import com.dannycom888.mylrcauto.settings.SweepColorChoice
+import com.dannycom888.mylrcauto.ui.SWEEP_COLOR
 import com.dannycom888.mylrcauto.ui.SweepFill
 import com.dannycom888.mylrcauto.ui.charFillProgress
+import com.dannycom888.mylrcauto.ui.sweepColorFor
 import com.dannycom888.mylrcauto.ui.sweepFill
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -265,5 +269,21 @@ class KaraokeLyricsTest {
     @Test
     fun sweepFillOfNoWordsIsDoneAndEmpty() {
         assertEquals(SweepFill(0, 1f), sweepFill(emptyList(), 10_000L))
+    }
+
+    // ---- sweep colour choice (v1.0.35) -------------------------------------
+
+    @Test
+    fun sweepColorGoldIsTheOriginalSweepColor() {
+        // GOLD maps to SWEEP_COLOR itself: the default choice is the
+        // exact colour the sweep has had since v1.0.33, unchanged.
+        assertEquals(Color(0xFFFFD54F), SWEEP_COLOR)
+        assertEquals(SWEEP_COLOR, sweepColorFor(SweepColorChoice.GOLD))
+    }
+
+    @Test
+    fun sweepColorOrangeAndRedAreThePickedHues() {
+        assertEquals(Color(0xFFFF9800), sweepColorFor(SweepColorChoice.ORANGE))
+        assertEquals(Color(0xFFFF5252), sweepColorFor(SweepColorChoice.RED))
     }
 }

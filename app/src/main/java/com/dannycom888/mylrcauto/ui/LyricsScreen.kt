@@ -245,6 +245,7 @@ fun LyricsScreen(container: AppContainer) {
                     modifier = Modifier.weight(1f),
                     fontSizeSp = settings.lyricsFontSizeSp,
                     lyricsFont = settings.lyricsFont,
+                    sweepColorChoice = settings.sweepColor,
                 )
                 Text(
                     text = document.sourceName,

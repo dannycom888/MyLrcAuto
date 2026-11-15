@@ -268,6 +268,9 @@ fun CarLyricsContent(
                             // Same font choice as the phone: the setting picks the
                             // font on both surfaces at once.
                             lyricsFont = settings.lyricsFont,
+                            // Same sweep colour as the phone (v1.0.35): the
+                            // shared LyricsView reads it on both surfaces.
+                            sweepColorChoice = settings.sweepColor,
                             modifier = Modifier.fillMaxSize(),
                         )
                     } else {

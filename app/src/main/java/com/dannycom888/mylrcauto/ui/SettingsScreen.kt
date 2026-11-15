@@ -72,6 +72,7 @@ import com.dannycom888.mylrcauto.media.formatMirrorRepublish
 import com.dannycom888.mylrcauto.settings.AppLanguage
 import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import com.dannycom888.mylrcauto.settings.SettingsStore
+import com.dannycom888.mylrcauto.settings.SweepColorChoice
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -99,6 +100,16 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
         AppLanguage.SYSTEM -> R.string.settings_language_system
         AppLanguage.CHINESE -> R.string.settings_language_chinese
         AppLanguage.ENGLISH -> R.string.settings_language_english
+    },
+)
+
+/** Sweep colour choice → its label string. */
+@Composable
+private fun sweepColorLabel(choice: SweepColorChoice): String = stringResource(
+    when (choice) {
+        SweepColorChoice.GOLD -> R.string.settings_sweep_color_gold
+        SweepColorChoice.ORANGE -> R.string.settings_sweep_color_orange
+        SweepColorChoice.RED -> R.string.settings_sweep_color_red
     },
 )
 
@@ -537,8 +548,8 @@ private fun LyricsDiagnosticsSection(indexDiag: LyricsIndexDiag, lookup: LookupT
 
 /**
  * Settings: language switch at the top, lyrics size slider, lyrics font
- * choice (original / Bauhaus), keep-screen-on switch, lyrics folder
- * pick + rescan, about line.
+ * choice (original / Bauhaus), sweep colour choice (gold / orange /
+ * red), keep-screen-on switch, lyrics folder pick + rescan, about line.
  *
  * Picking a language calls [com.dannycom888.mylrcauto.settings.SettingsStore.setAppLanguage];
  * the activity recreates itself (see MainActivity) so the whole screen switches
@@ -717,6 +728,41 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                             LyricsFontChoice.BAUHAUS -> R.string.settings_font_bauhaus
                         },
                     ),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Sweep colour （扫色颜色， v1.0.35) — three choices, same radio
+        // pattern as the font choice above: gold (the colour the sweep
+        // has had since v1.0.33, and the default, so nothing changes
+        // unless he switches), orange, red. The shared LyricsView reads
+        // the choice on the phone and the car surface alike, so one
+        // pick colours both; it takes effect the moment a row is tapped
+        // and persists in the same store as every other choice here.
+        Text(
+            text = stringResource(R.string.settings_sweep_color_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 2.dp),
+        )
+        SweepColorChoice.entries.forEach { choice ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { container.settings.setSweepColor(choice) }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = settings.sweepColor == choice,
+                    onClick = { container.settings.setSweepColor(choice) },
+                )
+                Text(
+                    text = sweepColorLabel(choice),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(start = 8.dp),
                 )

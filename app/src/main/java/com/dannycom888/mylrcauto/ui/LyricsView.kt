@@ -34,6 +34,7 @@ import com.dannycom888.mylrcauto.R
 import com.dannycom888.mylrcauto.lyrics.LyricsDocument
 import com.dannycom888.mylrcauto.lyrics.WordTiming
 import com.dannycom888.mylrcauto.settings.LyricsFontChoice
+import com.dannycom888.mylrcauto.settings.SweepColorChoice
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -74,6 +75,10 @@ import kotlinx.coroutines.CancellationException
  * (Bauhaus or the original font); it is passed through to
  * [lyricsFontSpec] per line. English lines are unaffected.
  *
+ * [sweepColorChoice] is the karaoke sweep colour from Settings
+ * (v1.0.35), mapped through [sweepColorFor]; both surfaces pass
+ * the same value, so one choice colours both.
+ *
  * An empty document renders nothing; the caller owns the empty state.
  */
 object LyricsTextSize {
@@ -104,10 +109,23 @@ internal fun scrollTargetIndex(currentIndex: Int, lineCount: Int): Int =
  * The karaoke sweep colour: the characters already sung are painted
  * in this, over the current line's unchanged glowing base colour.
  * Golden yellow — a hue contrast against the cyan glow, not a
- * brightness one, so the swept part keeps its glow. THE one place
- * to change it when the user picks another colour.
+ * brightness one, so the swept part keeps its glow. Since v1.0.35
+ * this is the GOLD entry of the Settings → 扫色颜色 choice (and its
+ * default); the other two hues live in [sweepColorFor] with it.
  */
 internal val SWEEP_COLOR: Color = Color(0xFFFFD54F)
+
+/**
+ * The sweep colour for a Settings [SweepColorChoice]: GOLD is
+ * [SWEEP_COLOR] itself, so the default path is the exact colour
+ * the sweep has had since v1.0.33. Pure, so the mapping is
+ * unit-testable without a UI.
+ */
+internal fun sweepColorFor(choice: SweepColorChoice): Color = when (choice) {
+    SweepColorChoice.GOLD -> SWEEP_COLOR
+    SweepColorChoice.ORANGE -> Color(0xFFFF9800)
+    SweepColorChoice.RED -> Color(0xFFFF5252)
+}
 
 /**
  * How far the karaoke sweep has filled one character that starts
@@ -213,6 +231,7 @@ fun LyricsView(
     followAlways: Boolean = false,
     fontSizeSp: Int = 17,
     lyricsFont: LyricsFontChoice = LyricsFontChoice.BAUHAUS,
+    sweepColorChoice: SweepColorChoice = SweepColorChoice.GOLD,
 ) {
     // Keyed on the document, so a new song starts at the top: without the
     // key the scroll position carried over from the previous song, and the
@@ -290,7 +309,7 @@ fun LyricsView(
                     // The base layer is the ordinary current line —
                     // the whole line in its glowing colour, exactly
                     // as v1.0.32 draws it, unsung part included. Over
-                    // it, the same text in SWEEP_COLOR, clipped to
+                    // it, the same text in the sweep colour, clipped to
                     // the part already sung: characters fully sung
                     // sit inside the clip, and the character being
                     // sung is cut mid-glyph at its fill fraction, so
@@ -344,7 +363,7 @@ fun LyricsView(
                                 lineHeight = lineHeight,
                                 fontFamily = fontSpec.fontFamily,
                                 fontWeight = fontSpec.fontWeight,
-                                color = SWEEP_COLOR,
+                                color = sweepColorFor(sweepColorChoice),
                             )
                         }
                     }

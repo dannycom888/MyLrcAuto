@@ -3,16 +3,18 @@ package com.dannycom888.mylrcauto
 import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import com.dannycom888.mylrcauto.settings.Settings
 import com.dannycom888.mylrcauto.settings.SettingsStore
+import com.dannycom888.mylrcauto.settings.SweepColorChoice
 import com.dannycom888.mylrcauto.ui.LyricsTextSize
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * The two new settings, as pure logic — no Android framework needed:
- * the font-size range/clamp in [SettingsStore], and the size derivation
- * in [LyricsTextSize] that [com.dannycom888.mylrcauto.ui.LyricsView] draws
- * with. Persistence itself (SharedPreferences read/write) is the same
- * store the language choice already uses.
+ * The settings' pure logic — no Android framework needed: the
+ * font-size range/clamp and the choice defaults in [SettingsStore],
+ * and the size derivation in [LyricsTextSize] that
+ * [com.dannycom888.mylrcauto.ui.LyricsView] draws with. Persistence
+ * itself (SharedPreferences read/write) is the same store the
+ * language choice already uses.
  */
 class SettingsTest {
 
@@ -53,6 +55,19 @@ class SettingsTest {
         // agree on false.
         assertEquals(false, Settings().diagnosticsVisible)
         assertEquals(false, SettingsStore.DEFAULT_DIAGNOSTICS_VISIBLE)
+    }
+
+    @Test
+    fun sweepColorDefaultsToGold() {
+        // The sweep colour choice defaults to gold (v1.0.35), so an
+        // existing install upgrades with the sweep in the exact
+        // colour it has always been; the data class default and the
+        // store's fallback agree, the same agreement the font choice
+        // below is held to. Persistence is the store's enum-name
+        // round trip, identical to the language and font choices.
+        assertEquals(SweepColorChoice.GOLD, Settings().sweepColor)
+        assertEquals(SweepColorChoice.GOLD, SettingsStore.DEFAULT_SWEEP_COLOR)
+        assertEquals("sweep_color", SettingsStore.KEY_SWEEP_COLOR)
     }
 
     @Test

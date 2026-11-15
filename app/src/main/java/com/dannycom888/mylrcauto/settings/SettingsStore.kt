@@ -15,6 +15,8 @@ data class Settings(
     val lyricsFontSizeSp: Int = SettingsStore.DEFAULT_LYRICS_FONT_SIZE_SP,
     /** Which font Chinese lyrics draw in (Settings → 歌词字体). */
     val lyricsFont: LyricsFontChoice = SettingsStore.DEFAULT_LYRICS_FONT,
+    /** The karaoke sweep colour (Settings → 扫色颜色）, v1.0.35. */
+    val sweepColor: SweepColorChoice = SettingsStore.DEFAULT_SWEEP_COLOR,
     /** Keep the phone screen on while the lyrics screen is showing. */
     val keepScreenOn: Boolean = false,
     /**
@@ -53,6 +55,14 @@ class SettingsStore(context: Context) {
         val lyricsFont = runCatching {
             if (fontName == null) DEFAULT_LYRICS_FONT else LyricsFontChoice.valueOf(fontName)
         }.getOrDefault(DEFAULT_LYRICS_FONT)
+        val sweepColorName = prefs.getString(KEY_SWEEP_COLOR, null)
+        val sweepColor = runCatching {
+            if (sweepColorName == null) {
+                DEFAULT_SWEEP_COLOR
+            } else {
+                SweepColorChoice.valueOf(sweepColorName)
+            }
+        }.getOrDefault(DEFAULT_SWEEP_COLOR)
         return Settings(
             localLyricsFolderUri = prefs.getString(KEY_FOLDER_URI, null),
             appLanguage = language,
@@ -60,6 +70,7 @@ class SettingsStore(context: Context) {
                 prefs.getInt(KEY_LYRICS_FONT_SIZE_SP, DEFAULT_LYRICS_FONT_SIZE_SP),
             ),
             lyricsFont = lyricsFont,
+            sweepColor = sweepColor,
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
             diagnosticsVisible = prefs.getBoolean(
                 KEY_DIAGNOSTICS_VISIBLE,
@@ -100,12 +111,18 @@ class SettingsStore(context: Context) {
         _settings.value = current.copy(lyricsFont = choice)
     }
 
+    fun setSweepColor(choice: SweepColorChoice) {
+        prefs.edit().putString(KEY_SWEEP_COLOR, choice.name).apply()
+        _settings.value = current.copy(sweepColor = choice)
+    }
+
     companion object {
         const val PREFS_FILE = "mylrcauto-prefs"
         const val KEY_FOLDER_URI = "local_lyrics_folder_uri"
         const val KEY_APP_LANGUAGE = "app_language"
         const val KEY_LYRICS_FONT_SIZE_SP = "lyrics_font_size_sp"
         const val KEY_LYRICS_FONT = "lyrics_font"
+        const val KEY_SWEEP_COLOR = "sweep_color"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_DIAGNOSTICS_VISIBLE = "diagnostics_visible"
 
@@ -119,6 +136,9 @@ class SettingsStore(context: Context) {
 
         /** Default lyrics font: Bauhaus, so adding the choice changes nothing on upgrade. */
         val DEFAULT_LYRICS_FONT: LyricsFontChoice = LyricsFontChoice.BAUHAUS
+
+        /** Default sweep colour: gold, the colour the sweep has always been. */
+        val DEFAULT_SWEEP_COLOR: SweepColorChoice = SweepColorChoice.GOLD
 
         fun coerceLyricsFontSizeSp(sp: Int): Int =
             sp.coerceIn(MIN_LYRICS_FONT_SIZE_SP, MAX_LYRICS_FONT_SIZE_SP)
