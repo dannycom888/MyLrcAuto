@@ -18,6 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import android.util.Log
 import com.dannycom888.mylrcauto.MyLrcAutoApp.AppContainer
 import com.dannycom888.mylrcauto.R
+import com.dannycom888.mylrcauto.lyrics.LyricsDocument
 import com.dannycom888.mylrcauto.lyrics.LyricsState
 import com.dannycom888.mylrcauto.media.Transport
 import kotlinx.coroutines.delay
@@ -156,7 +157,19 @@ class CarLyricsScreen(
                         lastRedrawAt = now
                         invalidate()
                     }
-                    delay(TICK_MS)
+                    // The tick's only pace change (v1.0.33): while a
+                    // word-timed line is playing, re-examine the
+                    // playhead at the karaoke rate so the surface's
+                    // sweep steps finely; the redraw guards above are
+                    // untouched, so the host still only hears about
+                    // real changes.
+                    delay(
+                        lyricsTickDelayMs(
+                            document = (container.lyrics.state.value as? LyricsState.Loaded)
+                                ?.document,
+                            positionMs = container.media.snapshot.value.playback.currentMs(),
+                        ),
+                    )
                 }
             }
         }
@@ -657,11 +670,13 @@ class CarLyricsScreen(
         const val TAG = "MyLrcAutoCarScreen"
 
         /**
-         * How often the playhead is re-examined. Half a second is
-         * imperceptible against a lyric line that lasts three, and it is a
-         * comparison of two small values rather than any drawing.
+         * How often the playhead is re-examined: [TICK_NORMAL_MS],
+         * or [TICK_KARAOKE_MS] while a word-timed line is playing —
+         * see [lyricsTickDelayMs]. Half a second is imperceptible
+         * against a lyric line that lasts three, and either pace is
+         * a comparison of two small values rather than any drawing.
          */
-        const val TICK_MS = 500L
+        const val TICK_MS = TICK_NORMAL_MS
 
         /**
          * A floor between redraws, whatever the words do.
@@ -686,6 +701,26 @@ class CarLyricsScreen(
         const val SURFACE_ASK_WINDOW_MS = 5_000L
     }
 }
+
+/**
+ * The pace of the lyrics ticks (the screen's poll above and the
+ * surface's ticker in CarLyricsContent): half a second normally —
+ * imperceptible against a line that lasts three seconds — and
+ * 200 ms while the line playing carries word timings, so the
+ * karaoke sweep advances in small steps instead of half-second
+ * jumps. Pure, so the pace decision is unit-testable.
+ */
+internal fun lyricsTickDelayMs(document: LyricsDocument?, positionMs: Long): Long {
+    val lines = document?.lines ?: return TICK_NORMAL_MS
+    val current = lines.getOrNull(document.indexAt(positionMs)) ?: return TICK_NORMAL_MS
+    return if (current.words.isNotEmpty()) TICK_KARAOKE_MS else TICK_NORMAL_MS
+}
+
+/** The ordinary tick pace: half a second, as it has always been. */
+internal const val TICK_NORMAL_MS = 500L
+
+/** The tick pace while a word-timed line is playing (v1.0.33). */
+internal const val TICK_KARAOKE_MS = 200L
 
 /** A transport button, named before it becomes an `Action` the host can validate. */
 internal enum class CarTransport { PREVIOUS, PLAY_PAUSE, NEXT }

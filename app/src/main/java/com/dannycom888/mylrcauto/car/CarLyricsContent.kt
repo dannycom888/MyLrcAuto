@@ -91,8 +91,9 @@ fun CarLyricsContent(
     val document = (lyricsState as? LyricsState.Loaded)?.document
         ?.takeIf { glance is CarGlance.Now }
 
-    // The 500 ms ticker, same as the phone screen: drives recomposition, so
-    // LyricsView's positionMsProvider reads a fresh extrapolated playhead.
+    // The ticker (500 ms, or 200 ms while a word-timed line plays —
+    // see the loop below): drives recomposition, so LyricsView's
+    // positionMsProvider reads a fresh extrapolated playhead.
     // The car surface otherwise only recomposes when a flow emits, which is
     // why the big lyrics panel could freeze while the template card — which
     // has its own tick loop — kept updating its line.
@@ -110,7 +111,20 @@ fun CarLyricsContent(
     var tick by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(500)
+            // The pace is the one thing that changes for karaoke
+            // (v1.0.33): while a word-timed line is playing the tick
+            // runs at 200 ms so the sweep on this surface steps
+            // finely; every other moment it is the same 500 ms as
+            // always. Decided by the same pure function the screen's
+            // poll uses (lyricsTickDelayMs), read fresh from the
+            // state each round.
+            delay(
+                lyricsTickDelayMs(
+                    document = (container.lyrics.state.value as? LyricsState.Loaded)
+                        ?.document,
+                    positionMs = container.media.snapshot.value.playback.currentMs(),
+                ),
+            )
             tick++
         }
     }
@@ -207,8 +221,8 @@ fun CarLyricsContent(
                         elevation = COVER_GLOW_DP.dp,
                         shape = RoundedCornerShape(8.dp),
                         clip = false,
-                        ambientColor = glow.copy(alpha = 0.55f),
-                        spotColor = glow.copy(alpha = 0.55f),
+                        ambientColor = glow.copy(alpha = COVER_GLOW_ALPHA),
+                        spotColor = glow.copy(alpha = COVER_GLOW_ALPHA),
                     ),
             ) {
                 Image(
@@ -269,8 +283,16 @@ fun CarLyricsContent(
  * The cover's glow: the shadow elevation around the cover's edge, in
  * dp. A soft halo on the black background, in the same colour as the
  * glowing current lyric line.
+ *
+ * Doubled in v1.0.33 (20 → 40 dp, alpha 0.55 → 0.85), at the user's
+ * ask: the halo reaches further out from the cover's edge and reads
+ * brighter against the black. The cover's size and placement are
+ * untouched — only the light around it changed.
  */
-private const val COVER_GLOW_DP = 20f
+private const val COVER_GLOW_DP = 40f
+
+/** How solid the cover's glow colour is (see [COVER_GLOW_DP]). */
+private const val COVER_GLOW_ALPHA = 0.85f
 
 /**
  * One or two lines, because that is all a driver should be given to read.

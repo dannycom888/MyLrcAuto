@@ -2,7 +2,7 @@
 
 An original app: local-only `.lrc` lyrics that follow Poweramp playback, showing the full lyrics on the phone and on the Android Auto head unit. No network, no online lyric lookup.
 
-Current version: **1.0.32** (versionCode 34). Per-version release notes live on the [releases page](https://github.com/dannycom888/MyLrcAuto/releases); the "What's new" sections below are historical and end at 1.0.21.
+Current version: **1.0.33** (versionCode 35). Per-version release notes live on the [releases page](https://github.com/dannycom888/MyLrcAuto/releases); the "What's new" sections below are historical and end at 1.0.21.
 
 This software was made with Muse's assistance.
 
@@ -150,7 +150,7 @@ gradle_build :app:testDebugUnitTest   # 311 tests, 0 failures
 gradle_build :app:assembleRelease    # signed with the shared keystore
 ```
 
-- Package `com.dannycom888.mylrcauto`, version 1.0.32 (versionCode 34), minSdk 26
+- Package `com.dannycom888.mylrcauto`, version 1.0.33 (versionCode 35), minSdk 26
 - Signed with the same key as the local-only MyLyrics / Melisma builds (`aalyrics-local`)
 - Source: `~/workspace/my-lrc-auto/mylrcauto`, notes: `~/workspace/my-lrc-auto/TASK.md`
 
