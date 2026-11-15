@@ -5,6 +5,9 @@ import com.dannycom888.mylrcauto.lyrics.LrcParser
 import com.dannycom888.mylrcauto.lyrics.LyricsDocument
 import com.dannycom888.mylrcauto.lyrics.WordSweep
 import com.dannycom888.mylrcauto.lyrics.WordTiming
+import com.dannycom888.mylrcauto.ui.SweepFill
+import com.dannycom888.mylrcauto.ui.charFillProgress
+import com.dannycom888.mylrcauto.ui.sweepFill
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -187,5 +190,80 @@ class KaraokeLyricsTest {
         )
         assertEquals(500L, lyricsTickDelayMs(document, 2_000L))
         assertEquals(500L, lyricsTickDelayMs(null, 2_000L))
+    }
+
+    // ---- smooth fill (v1.0.34) -------------------------------------------------
+
+    @Test
+    fun charFillProgressRunsLinearlyAcrossTheCharacter() {
+        // A character sung from 1.0s to 1.6s.
+        assertEquals(0f, charFillProgress(1_000L, 1_600L, 400L), 0.001f)
+        assertEquals(0f, charFillProgress(1_000L, 1_600L, 1_000L), 0.001f)
+        assertEquals(0.5f, charFillProgress(1_000L, 1_600L, 1_300L), 0.001f)
+        assertEquals(1f, charFillProgress(1_000L, 1_600L, 1_600L), 0.001f)
+        assertEquals(1f, charFillProgress(1_000L, 1_600L, 9_000L), 0.001f)
+    }
+
+    @Test
+    fun charFillProgressWithoutASpanStepsAtItsMoment() {
+        // endMs <= startMs: nothing to fill across, so the character
+        // is unsung before its moment and sung from its moment on.
+        assertEquals(0f, charFillProgress(2_000L, 2_000L, 1_999L), 0.001f)
+        assertEquals(1f, charFillProgress(2_000L, 2_000L, 2_000L), 0.001f)
+        assertEquals(1f, charFillProgress(2_000L, 2_000L, 2_001L), 0.001f)
+        // A reversed span follows the same rule, keyed on endMs.
+        assertEquals(0f, charFillProgress(2_000L, 1_500L, 1_499L), 0.001f)
+        assertEquals(1f, charFillProgress(2_000L, 1_500L, 1_500L), 0.001f)
+    }
+
+    @Test
+    fun sweepFillFillsTheCharacterBeingSung() {
+        // Three characters, 600 ms each, plus the end marker.
+        val words = listOf(
+            WordTiming(1_000L, "当"),
+            WordTiming(1_600L, "火"),
+            WordTiming(2_200L, "车"),
+            WordTiming(2_800L, ""),
+        )
+        assertEquals(SweepFill(0, 0f), sweepFill(words, 999L))
+        assertEquals(SweepFill(0, 0f), sweepFill(words, 1_000L))
+        assertEquals(SweepFill(0, 0.5f), sweepFill(words, 1_300L))
+        assertEquals(SweepFill(1, 0f), sweepFill(words, 1_600L))
+        assertEquals(SweepFill(1, 0.5f), sweepFill(words, 1_900L))
+        assertEquals(SweepFill(3, 1f), sweepFill(words, 2_800L))
+        assertEquals(SweepFill(3, 1f), sweepFill(words, 60_000L))
+    }
+
+    @Test
+    fun sweepFillDividesAMultiCharacterFragmentEvenly() {
+        // One two-character fragment sung across a full second, then
+        // the end marker: each character gets half the span.
+        val words = listOf(
+            WordTiming(1_000L, "AB"),
+            WordTiming(2_000L, ""),
+        )
+        assertEquals(SweepFill(0, 0.5f), sweepFill(words, 1_250L))
+        assertEquals(SweepFill(1, 0f), sweepFill(words, 1_500L))
+        assertEquals(SweepFill(1, 0.5f), sweepFill(words, 1_750L))
+        assertEquals(SweepFill(2, 1f), sweepFill(words, 2_000L))
+    }
+
+    @Test
+    fun sweepFillLastFragmentWithoutEndMarkerStepsWhole() {
+        // No trailing end marker: the last fragment has no measured
+        // end, so it counts as sung whole from its start — the
+        // behaviour such a line had before the smooth fill.
+        val words = listOf(
+            WordTiming(1_000L, "当"),
+            WordTiming(2_000L, "火"),
+        )
+        assertEquals(SweepFill(0, 0.5f), sweepFill(words, 1_500L))
+        assertEquals(SweepFill(2, 1f), sweepFill(words, 2_000L))
+        assertEquals(SweepFill(2, 1f), sweepFill(words, 9_000L))
+    }
+
+    @Test
+    fun sweepFillOfNoWordsIsDoneAndEmpty() {
+        assertEquals(SweepFill(0, 1f), sweepFill(emptyList(), 10_000L))
     }
 }

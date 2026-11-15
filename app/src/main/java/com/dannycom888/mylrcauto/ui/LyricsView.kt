@@ -21,17 +21,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dannycom888.mylrcauto.R
-import com.dannycom888.mylrcauto.lyrics.LyricLine
 import com.dannycom888.mylrcauto.lyrics.LyricsDocument
-import com.dannycom888.mylrcauto.lyrics.WordSweep
+import com.dannycom888.mylrcauto.lyrics.WordTiming
 import com.dannycom888.mylrcauto.settings.LyricsFontChoice
 import kotlinx.coroutines.CancellationException
 
@@ -49,9 +50,12 @@ import kotlinx.coroutines.CancellationException
  *
  * A current line that carries word timings (an enhanced LRC) adds
  * a sweep over that same highlight: the whole line keeps its
- * glowing colour, and the characters already sung are repainted in
- * [SWEEP_COLOR] as the sweep reaches them. Plain lines — every
- * line of a plain file — highlight whole, exactly as before.
+ * glowing colour, and the part already sung is overpainted in
+ * [SWEEP_COLOR]. The gold edge does not jump character by
+ * character: it fills the character being sung from its left edge
+ * to its right edge as the character is sung, so the boundary
+ * moves continuously with the playhead. Plain lines — every line
+ * of a plain file — highlight whole, exactly as before.
  *
  * Auto-scroll does not fight the reader: once the user drags the list, the
  * list stops following and a "back to current line" button appears; tapping
@@ -106,29 +110,98 @@ internal fun scrollTargetIndex(currentIndex: Int, lineCount: Int): Int =
 internal val SWEEP_COLOR: Color = Color(0xFFFFD54F)
 
 /**
- * The current line of an enhanced file, split at the sweep: the
- * characters already sung in [sungColor], the rest in [unsungColor]
- * (the line's ordinary glowing colour — the base layer shows
- * through untouched). The split point is [WordSweep]'s pure count;
- * this only paints it.
+ * How far the karaoke sweep has filled one character that starts
+ * at [startMs] and ends at [endMs], at playhead [positionMs]: 0
+ * before it starts, 1 once it has ended, linear in between.
+ *
+ * A character with no positive span (endMs <= startMs — the last
+ * fragment of a line that carries no end tag has no measured end)
+ * has nothing to fill across: it reads 0 before its moment and 1
+ * from its moment on, the whole-character behaviour such a
+ * character had before the smooth fill.
  */
-private fun karaokeText(
-    line: LyricLine,
-    positionMs: Long,
-    sungColor: Color,
-    unsungColor: Color,
-): AnnotatedString {
-    val sungCount = WordSweep.sungCharCount(line.words, positionMs)
-        .coerceIn(0, line.text.length)
-    return buildAnnotatedString {
-        append(line.text)
-        if (sungCount > 0) {
-            addStyle(SpanStyle(color = sungColor), 0, sungCount)
+internal fun charFillProgress(startMs: Long, endMs: Long, positionMs: Long): Float =
+    if (endMs <= startMs) {
+        if (positionMs >= endMs) 1f else 0f
+    } else {
+        ((positionMs - startMs).toFloat() / (endMs - startMs).toFloat())
+            .coerceIn(0f, 1f)
+    }
+
+/**
+ * Where the karaoke sweep stands at [positionMs]: [sungChars]
+ * leading characters are fully swept, and [currentProgress] is
+ * the [charFillProgress] of the character being sung right now —
+ * the character at index [sungChars]. When every character is
+ * sung, [currentProgress] is 1 and there is no character left to
+ * fill.
+ *
+ * A fragment's end is the next fragment's start; the trailing
+ * empty fragment is the line's end marker, so the last sung
+ * character fills across to it. Characters inside a
+ * multi-character fragment fill one by one, the fragment's span
+ * divided evenly between them — the same even-split assumption
+ * the character count made before. Pure, so the sweep math is
+ * unit-testable without a UI.
+ */
+internal data class SweepFill(val sungChars: Int, val currentProgress: Float)
+
+internal fun sweepFill(words: List<WordTiming>, positionMs: Long): SweepFill {
+    var sung = 0
+    for (index in words.indices) {
+        val segment = words[index]
+        val length = segment.text.length
+        if (length == 0) continue // the end marker carries no characters
+        if (positionMs < segment.startMs) return SweepFill(sung, 0f)
+        val endMs = words.getOrNull(index + 1)?.startMs ?: segment.startMs
+        if (endMs <= segment.startMs || positionMs >= endMs) {
+            sung += length
+            continue
         }
-        if (sungCount < line.text.length) {
-            addStyle(SpanStyle(color = unsungColor), sungCount, line.text.length)
+        // Inside this fragment: fill its characters one by one.
+        val span = (endMs - segment.startMs).toDouble()
+        for (charIndex in 0 until length) {
+            val charStart = segment.startMs + (span * charIndex / length).toLong()
+            val charEnd = segment.startMs + (span * (charIndex + 1) / length).toLong()
+            val progress = charFillProgress(charStart, charEnd, positionMs)
+            if (progress >= 1f) {
+                sung++
+            } else {
+                return SweepFill(sung, progress)
+            }
         }
     }
+    return SweepFill(sung, 1f)
+}
+
+/**
+ * The clip that bounds the sweep's gold layer at [fill]: every
+ * visual line above the one being sung is covered whole, and that
+ * line is covered up to the fill boundary inside the character
+ * being sung — its measured glyph box, cut at [fill]'s fraction.
+ * Coordinates come from the base text's own layout, so the gold
+ * layer (the same text, laid out identically) is cut exactly
+ * where the base text's glyphs are.
+ */
+private fun sweepClipPath(layout: TextLayoutResult, fill: SweepFill): Path {
+    val charIndex = fill.sungChars
+    val glyph = layout.getBoundingBox(charIndex)
+    val boundaryX = glyph.left + fill.currentProgress * glyph.width
+    val lineIndex = layout.getLineForOffset(charIndex)
+    val lineTop = layout.getLineTop(lineIndex)
+    val path = Path()
+    if (lineIndex > 0) {
+        path.addRect(Rect(0f, 0f, layout.size.width.toFloat(), lineTop))
+    }
+    path.addRect(
+        Rect(
+            left = layout.getLineLeft(lineIndex),
+            top = lineTop,
+            right = boundaryX,
+            bottom = layout.getLineBottom(lineIndex),
+        ),
+    )
+    return path
 }
 
 @Composable
@@ -213,29 +286,68 @@ fun LyricsView(
                 val lineHeight =
                     if (isCurrent) LyricsTextSize.currentLineHeightSp(fontSizeSp).sp else LyricsTextSize.lineHeightSp(fontSizeSp).sp
                 if (isCurrent && line.words.isNotEmpty()) {
-                    // Karaoke sweep (v1.0.33): two layers. The base
-                    // layer is the ordinary current line — the whole
-                    // line in its glowing colour, exactly as v1.0.32
-                    // draws it, unsung part included. Over it, the
-                    // characters already sung are repainted in
-                    // SWEEP_COLOR, advancing character by character,
-                    // so the sweep reads by hue against the glow —
-                    // never by dimming anything. Only the current
-                    // line of an enhanced file takes this path; every
-                    // other line renders exactly as before.
-                    Text(
-                        text = karaokeText(
-                            line = line,
-                            positionMs = positionMs,
-                            sungColor = SWEEP_COLOR,
-                            unsungColor = MaterialTheme.colorScheme.secondary,
-                        ),
-                        modifier = lineModifier,
-                        fontSize = lineFontSize,
-                        lineHeight = lineHeight,
-                        fontFamily = fontSpec.fontFamily,
-                        fontWeight = fontSpec.fontWeight,
-                    )
+                    // Karaoke sweep: two identical texts stacked.
+                    // The base layer is the ordinary current line —
+                    // the whole line in its glowing colour, exactly
+                    // as v1.0.32 draws it, unsung part included. Over
+                    // it, the same text in SWEEP_COLOR, clipped to
+                    // the part already sung: characters fully sung
+                    // sit inside the clip, and the character being
+                    // sung is cut mid-glyph at its fill fraction, so
+                    // the gold edge moves continuously with the
+                    // playhead instead of jumping character by
+                    // character. The sweep reads by hue against the
+                    // glow — never by dimming anything. Only the
+                    // current line of an enhanced file takes this
+                    // path; every other line renders exactly as
+                    // before.
+                    var lineLayout by remember(line) {
+                        mutableStateOf<TextLayoutResult?>(null)
+                    }
+                    val fill = sweepFill(line.words, positionMs)
+                    Box(modifier = lineModifier) {
+                        Text(
+                            text = line.text,
+                            modifier = Modifier.fillMaxWidth(),
+                            fontSize = lineFontSize,
+                            lineHeight = lineHeight,
+                            fontFamily = fontSpec.fontFamily,
+                            fontWeight = fontSpec.fontWeight,
+                            color = MaterialTheme.colorScheme.secondary,
+                            onTextLayout = { lineLayout = it },
+                        )
+                        if (fill.sungChars > 0 || fill.currentProgress > 0f) {
+                            Text(
+                                text = line.text,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .drawWithContent {
+                                        val contentScope = this
+                                        val layout = lineLayout
+                                        when {
+                                            // No layout yet (the first
+                                            // frame): draw nothing
+                                            // rather than flash the
+                                            // whole line gold for a
+                                            // frame.
+                                            layout == null -> Unit
+                                            fill.sungChars >= line.text.length ->
+                                                drawContent()
+                                            else -> clipPath(
+                                                sweepClipPath(layout, fill),
+                                            ) {
+                                                with(contentScope) { drawContent() }
+                                            }
+                                        }
+                                    },
+                                fontSize = lineFontSize,
+                                lineHeight = lineHeight,
+                                fontFamily = fontSpec.fontFamily,
+                                fontWeight = fontSpec.fontWeight,
+                                color = SWEEP_COLOR,
+                            )
+                        }
+                    }
                 } else {
                     Text(
                         text = line.text,
