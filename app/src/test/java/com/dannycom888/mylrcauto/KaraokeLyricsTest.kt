@@ -282,8 +282,11 @@ class KaraokeLyricsTest {
     }
 
     @Test
-    fun sweepColorOrangeAndRedAreThePickedHues() {
-        assertEquals(Color(0xFFFF9800), sweepColorFor(SweepColorChoice.ORANGE))
-        assertEquals(Color(0xFFFF5252), sweepColorFor(SweepColorChoice.RED))
+    fun sweepColorLightGreenAndLightPinkAreThePickedHues() {
+        // v1.0.36: the v1.0.35 orange and red slots were swapped for
+        // softer hues (the saturated pair read as harsh); gold above
+        // is untouched.
+        assertEquals(Color(0xFFA9E5A1), sweepColorFor(SweepColorChoice.LIGHT_GREEN))
+        assertEquals(Color(0xFFFFB7C5), sweepColorFor(SweepColorChoice.LIGHT_PINK))
     }
 }

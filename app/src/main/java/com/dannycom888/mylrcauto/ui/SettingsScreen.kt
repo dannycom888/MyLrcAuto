@@ -108,8 +108,8 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
 private fun sweepColorLabel(choice: SweepColorChoice): String = stringResource(
     when (choice) {
         SweepColorChoice.GOLD -> R.string.settings_sweep_color_gold
-        SweepColorChoice.ORANGE -> R.string.settings_sweep_color_orange
-        SweepColorChoice.RED -> R.string.settings_sweep_color_red
+        SweepColorChoice.LIGHT_GREEN -> R.string.settings_sweep_color_light_green
+        SweepColorChoice.LIGHT_PINK -> R.string.settings_sweep_color_light_pink
     },
 )
 
@@ -736,13 +736,22 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Sweep colour （扫色颜色， v1.0.35) — three choices, same radio
-        // pattern as the font choice above: gold (the colour the sweep
-        // has had since v1.0.33, and the default, so nothing changes
-        // unless he switches), orange, red. The shared LyricsView reads
+        // Sweep colour （扫色颜色， v1.0.35) — three choices: gold (the
+        // colour the sweep has had since v1.0.33, and the default, so
+        // nothing changes unless he switches), light green, light pink
+        // (v1.0.36: the v1.0.35 orange and red read as harsh, so their
+        // slots were swapped for softer hues; a stored orange/red pick
+        // migrates by slot in the store). The shared LyricsView reads
         // the choice on the phone and the car surface alike, so one
         // pick colours both; it takes effect the moment a row is tapped
         // and persists in the same store as every other choice here.
+        // Compact rows (v1.0.36), the language rows' shape: the
+        // RadioButton minimum interactive size is switched off for
+        // THESE rows only and each row takes an explicit 36dp height
+        // (was the standard 48dp minimum + 2dp vertical padding =
+        // 52dp), so the three rows sit closer together; the row stays
+        // full-width clickable, and every other section's rows keep
+        // the standard spacing.
         Text(
             text = stringResource(R.string.settings_sweep_color_title),
             style = MaterialTheme.typography.titleMedium,
@@ -750,22 +759,27 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             modifier = Modifier.padding(bottom = 2.dp),
         )
         SweepColorChoice.entries.forEach { choice ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { container.settings.setSweepColor(choice) }
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            CompositionLocalProvider(
+                LocalMinimumInteractiveComponentSize provides 0.dp,
             ) {
-                RadioButton(
-                    selected = settings.sweepColor == choice,
-                    onClick = { container.settings.setSweepColor(choice) },
-                )
-                Text(
-                    text = sweepColorLabel(choice),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .clickable { container.settings.setSweepColor(choice) }
+                        .padding(vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = settings.sweepColor == choice,
+                        onClick = { container.settings.setSweepColor(choice) },
+                    )
+                    Text(
+                        text = sweepColorLabel(choice),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
         }
 

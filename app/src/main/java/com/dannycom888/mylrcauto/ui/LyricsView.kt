@@ -123,8 +123,8 @@ internal val SWEEP_COLOR: Color = Color(0xFFFFD54F)
  */
 internal fun sweepColorFor(choice: SweepColorChoice): Color = when (choice) {
     SweepColorChoice.GOLD -> SWEEP_COLOR
-    SweepColorChoice.ORANGE -> Color(0xFFFF9800)
-    SweepColorChoice.RED -> Color(0xFFFF5252)
+    SweepColorChoice.LIGHT_GREEN -> Color(0xFFA9E5A1)
+    SweepColorChoice.LIGHT_PINK -> Color(0xFFFFB7C5)
 }
 
 /**

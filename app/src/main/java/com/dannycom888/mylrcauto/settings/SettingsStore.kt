@@ -55,14 +55,11 @@ class SettingsStore(context: Context) {
         val lyricsFont = runCatching {
             if (fontName == null) DEFAULT_LYRICS_FONT else LyricsFontChoice.valueOf(fontName)
         }.getOrDefault(DEFAULT_LYRICS_FONT)
+        // Not a plain valueOf: v1.0.36 renamed two enum entries, and
+        // fromStoredName migrates the retired v1.0.35 names by slot
+        // (unknown values still land on the gold default).
         val sweepColorName = prefs.getString(KEY_SWEEP_COLOR, null)
-        val sweepColor = runCatching {
-            if (sweepColorName == null) {
-                DEFAULT_SWEEP_COLOR
-            } else {
-                SweepColorChoice.valueOf(sweepColorName)
-            }
-        }.getOrDefault(DEFAULT_SWEEP_COLOR)
+        val sweepColor = SweepColorChoice.fromStoredName(sweepColorName)
         return Settings(
             localLyricsFolderUri = prefs.getString(KEY_FOLDER_URI, null),
             appLanguage = language,

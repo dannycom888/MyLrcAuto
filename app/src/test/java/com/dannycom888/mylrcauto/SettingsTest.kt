@@ -71,6 +71,35 @@ class SettingsTest {
     }
 
     @Test
+    fun sweepColorStoredNamesMigrateFromV1035() {
+        // v1.0.36 renamed the v1.0.35 ORANGE and RED entries to
+        // LIGHT_GREEN and LIGHT_PINK. A stored v1.0.35 name migrates
+        // by slot (an orange pick stays a pick, in the softer hue)
+        // instead of failing valueOf and dropping back to gold;
+        // current names read as themselves, and null (never stored)
+        // or an unrecognised value falls back to the gold default.
+        assertEquals(
+            SweepColorChoice.LIGHT_GREEN,
+            SweepColorChoice.fromStoredName("ORANGE"),
+        )
+        assertEquals(
+            SweepColorChoice.LIGHT_PINK,
+            SweepColorChoice.fromStoredName("RED"),
+        )
+        assertEquals(SweepColorChoice.GOLD, SweepColorChoice.fromStoredName("GOLD"))
+        assertEquals(
+            SweepColorChoice.LIGHT_GREEN,
+            SweepColorChoice.fromStoredName("LIGHT_GREEN"),
+        )
+        assertEquals(
+            SweepColorChoice.LIGHT_PINK,
+            SweepColorChoice.fromStoredName("LIGHT_PINK"),
+        )
+        assertEquals(SweepColorChoice.GOLD, SweepColorChoice.fromStoredName("CHARTREUSE"))
+        assertEquals(SweepColorChoice.GOLD, SweepColorChoice.fromStoredName(null))
+    }
+
+    @Test
     fun lyricsFontDefaultsToBauhaus() {
         // The font choice defaults to Bauhaus, so adding the setting
         // changes nothing for an existing install: Chinese lyrics

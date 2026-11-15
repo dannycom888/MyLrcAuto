@@ -40,8 +40,8 @@
     <string name="settings_font_bauhaus">Regular script</string>
     <string name="settings_sweep_color_title">Sweep color</string>
     <string name="settings_sweep_color_gold">Gold</string>
-    <string name="settings_sweep_color_orange">Orange</string>
-    <string name="settings_sweep_color_red">Red</string>
+    <string name="settings_sweep_color_light_green">Light green</string>
+    <string name="settings_sweep_color_light_pink">Light pink</string>
     <string name="settings_keep_screen_on_title">Keep screen on</string>
     <string name="settings_diagnostics_title">Diagnostics</string>
     <string name="settings_diagnostics_summary">Show the lyrics lookup and big screen diagnostics below. They keep recording while hidden.</string>
